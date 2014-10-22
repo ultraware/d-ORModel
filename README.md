@@ -17,15 +17,17 @@ The models and attributes can be used for all layers and tiers:
 Instead of datamodules with queries and hidden design time textual sql statements and fields, everything
 is done in code with objects.
 
-= LINQ = 
+## LINQ 
 By using a query builder with fluent interfaces, you can create sql statements in your code which are
 typesafe and checked by the compiler.
 
-For example:
+For example:  
+```
   TESTCrud.NewQuery
     .Select          ([TESTCrud.Data.ID])
     .Where.FieldValue(TESTCrud.Data.Name).Equal('test');
   if TESTCrud.QuerySelectSingle then
     MessageDlg('Record is found in database!');
-    
+```
+
 There are many more cool features, take a look at the unit tests for examples.
