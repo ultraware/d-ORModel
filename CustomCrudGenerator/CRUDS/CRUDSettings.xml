@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<CRUDSettings>
+  <Tables TableName="Test">
+    <Fields FieldName="ID" FieldType="ftFieldID" Required="True" MinValue="-2147483647" MaxValue="2147483647" IsPK="True" IsFK="False" GenerateDirectJoin="True" HasDefault="False" SkipDefault="False"/>
+    <Fields FieldName="Datum" FieldType="ftFieldDateTime" Required="True" IsPK="False" IsFK="False" GenerateDirectJoin="True" HasDefault="False" SkipDefault="False"/>
+    <Fields FieldName="Tekst" FieldType="ftFieldString" Required="False" MaxValue="4000" IsPK="False" IsFK="False" GenerateDirectJoin="True" HasDefault="False" SkipDefault="False"/>
+  </Tables>
+</CRUDSettings>

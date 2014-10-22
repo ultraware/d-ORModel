@@ -1,0 +1,237 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{8CB5CF5F-6065-4B01-A81E-2DD588A502EF}</ProjectGuid>
+        <ProjectVersion>14.4</ProjectVersion>
+        <FrameworkType>VCL</FrameworkType>
+        <MainSource>CustomCrudGenerator.dpr</MainSource>
+        <Base>True</Base>
+        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Platform Condition="'$(Platform)'==''">Win32</Platform>
+        <TargetedPlatforms>1</TargetedPlatforms>
+        <AppType>Application</AppType>
+        <DCC_DCCCompiler>DCC32</DCC_DCCCompiler>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Debug' or '$(Cfg_1)'!=''">
+        <Cfg_1>true</Cfg_1>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win32' and '$(Cfg_1)'=='true') or '$(Cfg_1_Win32)'!=''">
+        <Cfg_1_Win32>true</Cfg_1_Win32>
+        <CfgParent>Cfg_1</CfgParent>
+        <Cfg_1>true</Cfg_1>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_2)'!=''">
+        <Cfg_2>true</Cfg_2>
+        <CfgParent>Base</CfgParent>
+        <Base>true</Base>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Base)'!=''">
+        <DCC_UnitSearchPath>..\Func\;..\Data;..\DB;..\Fastmm;..\HitXML;..\HitXML\SAX;..\HitXML\AElfred2;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_ExeOutput>.\bin\</DCC_ExeOutput>
+        <DCC_DependencyCheckOutputName>Win32\Debug\UltraGenerator.exe</DCC_DependencyCheckOutputName>
+        <VerInfo_Keys>CompanyName=;FileDescription=;FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductName=;ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
+        <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;system.win;$(DCC_Namespace)</DCC_Namespace>
+        <Manifest_File>None</Manifest_File>
+        <VerInfo_Locale>1033</VerInfo_Locale>
+        <Icon_MainIcon>$(BDS)\bin\delphi_PROJECTICON.ico</Icon_MainIcon>
+        <DCC_DcuOutput>.\dcu</DCC_DcuOutput>
+        <DCC_E>false</DCC_E>
+        <DCC_N>false</DCC_N>
+        <DCC_S>false</DCC_S>
+        <DCC_F>false</DCC_F>
+        <DCC_K>false</DCC_K>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_1)'!=''">
+        <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
+        <DCC_DebugDCUs>true</DCC_DebugDCUs>
+        <DCC_Optimize>false</DCC_Optimize>
+        <DCC_GenerateStackFrames>true</DCC_GenerateStackFrames>
+        <DCC_DebugInfoInExe>true</DCC_DebugInfoInExe>
+        <DCC_RemoteDebug>true</DCC_RemoteDebug>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_1_Win32)'!=''">
+        <DCC_ExeOutput>.\bin</DCC_ExeOutput>
+        <DCC_Namespace>Data.Win;winapi;$(DCC_Namespace)</DCC_Namespace>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_2)'!=''">
+        <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>
+        <DCC_Define>RELEASE;$(DCC_Define)</DCC_Define>
+        <DCC_SymbolReferenceInfo>0</DCC_SymbolReferenceInfo>
+        <DCC_DebugInformation>false</DCC_DebugInformation>
+    </PropertyGroup>
+    <ItemGroup>
+        <DelphiCompile Include="$(MainSource)">
+            <MainSource>MainSource</MainSource>
+        </DelphiCompile>
+        <DCCReference Include="..\UltraGenerator\fMain.pas">
+            <Form>frmMain</Form>
+        </DCCReference>
+        <DCCReference Include="..\UltraGenerator\fModelGenerator.pas">
+            <Form>frmModelGenerator</Form>
+        </DCCReference>
+        <DCCReference Include="..\UltraGenerator\uGenerator.pas"/>
+        <DCCReference Include="..\UltraGenerator\uMetaLoader.pas"/>
+        <DCCReference Include="..\Data\Data.Base.pas"/>
+        <DCCReference Include="..\Data\Data.CRUD.pas"/>
+        <DCCReference Include="..\Data\Data.CRUDDataset.pas"/>
+        <DCCReference Include="..\Data\Data.CustomTypes.pas"/>
+        <DCCReference Include="..\Data\Data.DataRecord.pas"/>
+        <DCCReference Include="..\Data\Data.DataRecordList.pas"/>
+        <DCCReference Include="..\Data\Data.EnumField.pas"/>
+        <DCCReference Include="..\Data\Data.Query.pas"/>
+        <DCCReference Include="..\UltraGenerator\Data.CRUDSettings.pas"/>
+        <DCCReference Include="..\DB\DB.ADODataConverter.pas"/>
+        <DCCReference Include="..\DB\DB.Base.pas"/>
+        <DCCReference Include="..\DB\DB.Connection.pas"/>
+        <DCCReference Include="..\DB\DB.ConnectionPool.pas"/>
+        <DCCReference Include="..\DB\DB.Connector.pas"/>
+        <DCCReference Include="..\DB\DB.SQLBuilder.pas"/>
+        <DCCReference Include="..\DB\DB.Connection.SQLServer.pas"/>
+        <DCCReference Include="..\DB\DB.Settings.SQLServer.pas"/>
+        <DCCReference Include="..\DB\DB.Provider.ADO.pas"/>
+        <DCCReference Include="..\Func\GlobalRTTI.pas"/>
+        <DCCReference Include="..\Func\Meta.Data.pas"/>
+        <DCCReference Include="..\Func\MultiEvent.pas"/>
+        <DCCReference Include="..\Func\ThreadFinalization.pas"/>
+        <DCCReference Include="..\Func\Utils.Validation.pas"/>
+        <DCCReference Include="CRUDS\CRUD.TEST.pas"/>
+        <DCCReference Include="CRUDS\Meta.TEST.pas"/>
+        <DCCReference Include="CRUDS\Meta.CustomIDTypes.pas"/>
+        <BuildConfiguration Include="Release">
+            <Key>Cfg_2</Key>
+            <CfgParent>Base</CfgParent>
+        </BuildConfiguration>
+        <BuildConfiguration Include="Base">
+            <Key>Base</Key>
+        </BuildConfiguration>
+        <BuildConfiguration Include="Debug">
+            <Key>Cfg_1</Key>
+            <CfgParent>Base</CfgParent>
+        </BuildConfiguration>
+    </ItemGroup>
+    <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
+    <ProjectExtensions>
+        <Borland.Personality>Delphi.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Delphi.Personality>
+                <VersionInfo>
+                    <VersionInfo Name="IncludeVerInfo">True</VersionInfo>
+                    <VersionInfo Name="AutoIncBuild">False</VersionInfo>
+                    <VersionInfo Name="MajorVer">1</VersionInfo>
+                    <VersionInfo Name="MinorVer">0</VersionInfo>
+                    <VersionInfo Name="Release">0</VersionInfo>
+                    <VersionInfo Name="Build">0</VersionInfo>
+                    <VersionInfo Name="Debug">False</VersionInfo>
+                    <VersionInfo Name="PreRelease">False</VersionInfo>
+                    <VersionInfo Name="Special">False</VersionInfo>
+                    <VersionInfo Name="Private">False</VersionInfo>
+                    <VersionInfo Name="DLL">False</VersionInfo>
+                    <VersionInfo Name="Locale">1033</VersionInfo>
+                    <VersionInfo Name="CodePage">1252</VersionInfo>
+                </VersionInfo>
+                <VersionInfoKeys>
+                    <VersionInfoKeys Name="CompanyName"/>
+                    <VersionInfoKeys Name="FileDescription"/>
+                    <VersionInfoKeys Name="FileVersion">1.0.0.0</VersionInfoKeys>
+                    <VersionInfoKeys Name="InternalName"/>
+                    <VersionInfoKeys Name="LegalCopyright"/>
+                    <VersionInfoKeys Name="LegalTrademarks"/>
+                    <VersionInfoKeys Name="OriginalFilename"/>
+                    <VersionInfoKeys Name="ProductName"/>
+                    <VersionInfoKeys Name="ProductVersion">1.0.0.0</VersionInfoKeys>
+                    <VersionInfoKeys Name="Comments"/>
+                    <VersionInfoKeys Name="CFBundleName"/>
+                    <VersionInfoKeys Name="CFBundleDisplayName"/>
+                    <VersionInfoKeys Name="CFBundleIdentifier"/>
+                    <VersionInfoKeys Name="CFBundleVersion"/>
+                    <VersionInfoKeys Name="CFBundlePackageType"/>
+                    <VersionInfoKeys Name="CFBundleSignature"/>
+                    <VersionInfoKeys Name="CFBundleAllowMixedLocalizations"/>
+                    <VersionInfoKeys Name="CFBundleExecutable"/>
+                </VersionInfoKeys>
+                <Source>
+                    <Source Name="MainSource">CustomCrudGenerator.dpr</Source>
+                </Source>
+                <Excluded_Packages>
+                    <Excluded_Packages Name="$(BDSBIN)\dcloffice2K170.bpl">Microsoft Office 2000 Sample Automation Server Wrapper Components</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JclBaseExpert170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JclBaseExpert170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JclProjectAnalysisExpert170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JclProjectAnalysisExpert170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JclFavoriteFoldersExpert170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JclFavoriteFoldersExpert170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JclRepositoryExpert170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JclRepositoryExpert170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvAppFrmDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvAppFrmDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCoreDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCoreDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvBandsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvBandsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvBDEDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvBDEDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDBDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDBDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCmpDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCmpDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvControlsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvControlsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCryptDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCryptDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCustomDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvCustomDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDlgsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDlgsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDockingDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDockingDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDotNetCtrlsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvDotNetCtrlsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvGlobusDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvGlobusDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvHMIDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvHMIDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvJansDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvJansDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvManagedThreadsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvManagedThreadsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvMMDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvMMDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvNetDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvNetDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPageCompsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPageCompsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPascalInterpreterDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPascalInterpreterDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPluginSystemDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPluginSystemDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPrintPreviewDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvPrintPreviewDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvRuntimeDesignDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvRuntimeDesignDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvStdCtrlsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvStdCtrlsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvSystemDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvSystemDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvTimeFrameworkDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvTimeFrameworkDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvWizardsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvWizardsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JvXPCtrlsDesign170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JvXPCtrlsDesign170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\Bpl\TMSDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\Bpl\TMSDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\tmsexdxe3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\tmsexdxe3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\DBSRVPkgDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\DBSRVPkgDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\RichViewActionsDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\RichViewActionsDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\RVPkgDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\RVPkgDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\SRVPkgDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\SRVPkgDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\RVDBPkgDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\RVDBPkgDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\SRVControlsDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\SRVControlsDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\FrameViewerXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\FrameViewerXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\RvHtmlViewImportDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\RvHtmlViewImportDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\UltrawareXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\UltrawareXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\OverigeXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\OverigeXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\SynEdit_DXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\SynEdit_DXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Componenten\Envision\packages\En_DXE3.bpl">File D:\Delphi\DelphiXE3\Componenten\Envision\packages\En_DXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\TweePieREigenComponenten.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\TweePieREigenComponenten.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\hbTapi Components 2013\Bin\DelphiCB2013\hbTapi17Dsgn.bpl">File D:\Delphi\hbTapi Components 2013\Bin\DelphiCB2013\hbTapi17Dsgn.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\express.bpl">File D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\express.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\schoolmaster.bpl">File D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\schoolmaster.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\schoolmasterDBedit.bpl">File D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\schoolmasterDBedit.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\schoolmasterDB.bpl">File D:\Delphi\Delphi7\DevXE3\VCL\SCHOOLMASTER\bpl\schoolmasterDB.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JclDebugExpert170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JclDebugExpert170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JclSIMDViewExpert170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JclSIMDViewExpert170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\BPL\JclStackTraceViewerExpert170.bpl">File D:\Delphi\DelphiXE3\Borland Projects\BPL\JclStackTraceViewerExpert170.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="D:\Delphi\DelphiXE3\Borland Projects\Bpl\TMSDEDXE3.bpl">File D:\Delphi\DelphiXE3\Borland Projects\Bpl\TMSDEDXE3.bpl not found</Excluded_Packages>
+                    <Excluded_Packages Name="C:\Users\Public\Documents\RAD Studio\10.0\Bpl\dxComnXE3.bpl">ExpressCommonLibrary by Developer Express Inc.</Excluded_Packages>
+                    <Excluded_Packages Name="$(BDSBIN)\dclofficexp170.bpl">Microsoft Office XP Sample Automation Server Wrapper Components</Excluded_Packages>
+                </Excluded_Packages>
+                <Parameters>
+                    <Parameters Name="UseLauncher">False</Parameters>
+                    <Parameters Name="LoadAllSymbols">True</Parameters>
+                    <Parameters Name="LoadUnspecifiedSymbols">False</Parameters>
+                </Parameters>
+            </Delphi.Personality>
+            <Deployment/>
+            <Platforms>
+                <Platform value="Win32">True</Platform>
+                <Platform value="Win64">False</Platform>
+            </Platforms>
+        </BorlandProject>
+        <ProjectFileVersion>12</ProjectFileVersion>
+    </ProjectExtensions>
+    <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
+</Project>
