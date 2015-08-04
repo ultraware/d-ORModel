@@ -33,6 +33,7 @@ type
    ICaseWhen = interface;
    ICondition = interface;
    IConditionCompareTo = interface;
+   IConditionCompareToMulti = interface;
    ICaseElseCondition = interface;
    IConditionCompareOperator = interface;
    IStatementBase = interface;
@@ -83,6 +84,10 @@ type
       function Min(const aSubStatement: IStatementBase): IFloatStatement; overload;
       function Max(const aField: TBaseField): IFloatStatement; overload;
       function Max(const aSubStatement: IStatementBase): IFloatStatement; overload;
+      function Count(const aField: TBaseField): IFloatStatement; overload;
+      function Count(const aSubStatement: IStatementBase): IFloatStatement; overload;
+      function CountDistinct(const aField: TBaseField): IFloatStatement; overload;
+      function CountDistinct(const aSubStatement: IStatementBase): IFloatStatement; overload;
       //TODO
 //      // Bewerkingen op strings
       function Trim(const aField: TBaseField): IStringStatement; overload;
@@ -99,8 +104,8 @@ type
 //      function Upper(const aSubStatement: IStringStatement): IStringStatement; overload;
 //      function Lower(const aField: TBaseField): IStringStatement; overload;
 //      function Lower(const aSubStatement: IStringStatement): IStringStatement; overload;
-//      function Replace(const aField: TBaseField; const OldPattern, NewPattern: IStringStatement): IStringStatement; overload;
-//      function Replace(const aSubStatement: IStringStatement; const OldPattern, NewPattern: IStringStatement): IStringStatement; overload;
+      function Replace(const aField: TBaseField; const OldPattern, NewPattern: IStringStatement): IStringStatement; overload;
+      function Replace(const aSubStatement: IStringStatement; const OldPattern, NewPattern: IStringStatement): IStringStatement; overload;
 //      function Substring(const aField: TBaseField; const Start, Length: IIntegerStatement): IStringStatement; overload;
 //      function Substring(const aSubStatement: IStringStatement; const Start, Length: IIntegerStatement): IStringStatement; overload;
 //      // informatie van strings
@@ -172,6 +177,8 @@ type
       function SmallerThen: IConditionCompareTo;
       function IsNull: ICondition;
       function IsNotNull: ICondition;
+      function InSet: IConditionCompareToMulti;
+      function NotInSet: IConditionCompareToMulti;
    end;
 
    IConditionCompareTo = interface
@@ -180,6 +187,12 @@ type
       function CompareValue(const aValue: Variant): ICondition;
       function CompareField(const aField: TBaseField): ICondition;
       function CompareStatement(const aSubStatement: IStatementBase): ICondition;
+   end;
+
+   IConditionCompareToMulti = interface
+      function Values(const aValues: array of Variant): ICondition; overload;
+      function Values(const aValues: array of string): ICondition; overload;
+      function Values(const aValues: array of Integer): ICondition; overload;
    end;
 
    IStatementBase = interface
@@ -238,7 +251,7 @@ type
 
    TQueryFieldBuilder = class(TInterfacedObject, IQueryFieldBuilder, ICustomSQLType,
       ICaseNext, ICaseThen, ICaseWhen, ICaseEnd,
-      IConditionCompare, IConditionCompareOperator, IConditionCompareTo, ICondition, ICaseElseCondition,
+      IConditionCompare, IConditionCompareOperator, IConditionCompareTo, IConditionCompareToMulti, ICondition, ICaseElseCondition,
       IStatementBase, IStatement, IStringStatement, IIntegerStatement, IFloatStatement, IDateTimeStatement, IDateStatement,
       IIsNullNext, ICoalesceNext, ICoalesceEnd)
    strict private
@@ -254,7 +267,7 @@ type
    private
       function GetCustomSQL(const aQuery: IQueryDetails; const WithAlias: Boolean): string;
       procedure AddRequiredFields(var RequiredFields: TFieldArray);
-      function DefaultIsNullValue(const aField: TBaseField): string;
+      function DefaultIsNullValue(const aField: TBaseField): Variant;
       function GetUnformattedSQL: string;
       function Fields: TFieldList;
    public
@@ -288,9 +301,16 @@ type
       function Min(const aSubStatement: IStatementBase): IFloatStatement; overload;
       function Max(const aField: TBaseField): IFloatStatement; overload;
       function Max(const aSubStatement: IStatementBase): IFloatStatement; overload;
+      function Count(const aField: TBaseField): IFloatStatement; overload;
+      function Count(const aSubStatement: IStatementBase): IFloatStatement; overload;
+      function CountDistinct(const aField: TBaseField): IFloatStatement; overload;
+      function CountDistinct(const aSubStatement: IStatementBase): IFloatStatement; overload;
 
       function Abs(const aField: TBaseField): IFloatStatement; overload;
       function Abs(const aSubStatement: IFloatStatement): IFloatStatement; overload;
+
+      function Replace(const aField: TBaseField; const OldPattern, NewPattern: IStringStatement): IStringStatement; overload;
+      function Replace(const aSubStatement: IStringStatement; const OldPattern, NewPattern: IStringStatement): IStringStatement; overload;
 
       function IsNull(const aField: TBaseField): IIsNullNext; overload;
       function IsNull(const aSubStatement: IStatementBase): IIsNullNext; overload;
@@ -332,12 +352,18 @@ type
       function SmallerThen: IConditionCompareTo;
       function IsNull: ICondition; overload;
       function IsNotNull: ICondition; overload;
+      function InSet: IConditionCompareToMulti;
+      function NotInSet: IConditionCompareToMulti;
       { IConditionCompare }
       function Waar: ICondition;
       function Onwaar: ICondition;
       function CompareValue(const aValue: Variant): ICondition;
       function CompareField(const aField: TBaseField): ICondition;
       function CompareStatement(const aSubStatement: IStatementBase): ICondition;
+      { IConditionCompareToMulti }
+      function Values(const aValues: array of Variant): ICondition; overload;
+      function Values(const aValues: array of string): ICondition; overload;
+      function Values(const aValues: array of Integer): ICondition; overload;
       { IStatementBase }
       function Plus: ICustomSQLType;
       function CloseBracketStatement: IStatement;
@@ -387,6 +413,7 @@ type
       function GetCustomSQL(const aQuery: IQueryDetails; const WithAlias: Boolean): string;
       function GetRequiredFields: TFieldArray;
    end;
+   TCustomSQLFieldClass = class of TCustomSQLField;
 
    TSQLStringField = class(TCustomSQLField)
    private
@@ -404,6 +431,7 @@ type
       function GetFieldType: TFieldType; override;
    public
       property TypedInteger: Integer read GetValueAsInteger;
+      property ValueOrZero: Integer read GetIntValueOrZero;
    end;
 
    TSQLDoubleField = class(TCustomSQLField)
@@ -420,11 +448,24 @@ type
       property TypedCurrency: Currency read GetValueAsCurrency;
    end;
 
-   TSQLDateTimeField = class(TCustomSQLField)
+   TSQLDateTimeFieldBase = class(TCustomSQLField)
    protected
       function GetFieldType: TFieldType; override;
+   end;
+
+   TSQLDateTimeField = class(TSQLDateTimeFieldBase)
    public
       property TypedDateTime: TDateTime read GetValueAsDateTime;
+   end;
+
+   TSQLDateField = class(TSQLDateTimeFieldBase)
+   public
+      property TypedDate: TDate read GetValueAsDate;
+   end;
+
+   TSQLTimeField = class(TSQLDateTimeFieldBase)
+   public
+      property TypedTime: TTime read GetValueAsTime;
    end;
 
    TSQLBooleanField = class(TCustomSQLField)
@@ -452,6 +493,8 @@ type
    function AddCustomIntegerField(DataRecord: TDataRecord; const Name: string): TSQLIntegerField;
    function AddCustomDoubleField(DataRecord: TDataRecord; const Name: string): TSQLDoubleField;
    function AddCustomDateTimeField(DataRecord: TDataRecord; const Name: string): TSQLDateTimeField;
+   function AddCustomDateField(DataRecord: TDataRecord; const Name: string): TSQLDateField;
+   function AddCustomTimeField(DataRecord: TDataRecord; const Name: string): TSQLTimeField;
    function AddCustomBooleanField(DataRecord: TDataRecord; const Name: string): TSQLBooleanField;
    procedure RemoveCustomSQLField(Field: TCustomSQLField; DataRecord: TDataRecord; const DestroyField: Boolean = True);
 
@@ -467,6 +510,7 @@ type
       function GetSQLIntegerField(index: Integer): TSQLIntegerField;
    public
       procedure AfterConstruction; override;
+   published
       property  SQL_Now_Field             : TSQLDateTimeField            index   0 read GetSQLDateField;
       property  SQL_TodayField            : TSQLDateTimeField            index   1 read GetSQLDateField;
       property  SQL_Now_Plus_1_Field      : TSQLDateTimeField            index   2 read GetSQLDateField;
@@ -507,7 +551,9 @@ const
    SQL_SmallerOrEqualThen  = '<=';
    SQL_SmallerThen         = '<';
    SQL_Is                  = 'is';
+   SQL_In                  = 'in';
    SQL_Not                 = 'not';
+   SQL_Not_In              = 'not in';
    SQL_Null                = 'null';
    SQL_Convert             = 'Convert(';
    SQL_IsNull              = 'IsNull(';
@@ -540,9 +586,10 @@ const
    SQL_Sum                 = 'Sum(';
    SQL_Minimum             = 'Min(';
    SQL_Maximum             = 'Max(';
+   SQL_Count               = 'Count(';
+   SQL_Distinct            = 'distinct';
 
-
-function AddExtraField(DataRecord: TDataRecord; const Name: string; const aFieldType: TFieldType): TCustomSQLField;
+function AddExtraField(DataRecord: TDataRecord; const Name: string; const aFieldType: TFieldType; const CustomSQLFieldClass: TCustomSQLFieldClass = nil): TCustomSQLField;
 var Index: Integer;
     TableFieldMeta: TBaseTableAttribute;
     FieldMeta: TTypedMetaField;
@@ -551,6 +598,10 @@ begin
    TableFieldMeta := TBaseTableAttribute.Create(nil);
    FieldMeta := TTypedMetaField.Create(Name, aFieldType, false, '', 0, 0);
    TableFieldMeta.FieldMetaData := FieldMeta;
+   if Assigned(CustomSQLFieldClass) then
+      Result := CustomSQLFieldClass.Create  (Name, DataRecord, Index, TableFieldMeta)
+   else
+   begin
    case aFieldType of
       ftFieldString:                Result := TSQLStringField.Create  (Name, DataRecord, Index, TableFieldMeta);
       ftFieldBoolean:               Result := TSQLBooleanField.Create (Name, DataRecord, Index, TableFieldMeta);
@@ -559,6 +610,7 @@ begin
       ftFieldDateTime:              Result := TSQLDateTimeField.Create(Name, DataRecord, Index, TableFieldMeta);
    else
       Result := TCustomSQLField.Create(Name, DataRecord, Index, TableFieldMeta);
+   end;
    end;
 
    DataRecord.Insert(Index, Result);
@@ -583,6 +635,16 @@ end;
 function AddCustomDateTimeField(DataRecord: TDataRecord; const Name: string): TSQLDateTimeField;
 begin
    Result := AddExtraField(DataRecord, Name, ftFieldDateTime) as TSQLDateTimeField;
+end;
+
+function AddCustomDateField(DataRecord: TDataRecord; const Name: string): TSQLDateField;
+begin
+   Result := AddExtraField(DataRecord, Name, ftFieldDateTime, TSQLDateField) as TSQLDateField;
+end;
+
+function AddCustomTimeField(DataRecord: TDataRecord; const Name: string): TSQLTimeField;
+begin
+   Result := AddExtraField(DataRecord, Name, ftFieldDateTime, TSQLTimeField) as TSQLTimeField;
 end;
 
 function AddCustomBooleanField(DataRecord: TDataRecord; const Name: string): TSQLBooleanField;
@@ -695,14 +757,15 @@ begin
    FSubStatements.Clear;
 end;
 
-function TQueryFieldBuilder.DefaultIsNullValue(const aField: TBaseField): string;
+function TQueryFieldBuilder.DefaultIsNullValue(const aField: TBaseField): Variant;
 begin
    case aField.FieldType of
       ftFieldID,
       ftFieldBoolean,
       ftFieldDouble,
+      ftFieldCurrency,
       ftFieldInteger,
-      ftFieldDateTime: Result := '0';
+      ftFieldDateTime: Result := 0;
    else
        Result := '';
    end;
@@ -776,7 +839,11 @@ var F: TBaseField;
     Sub: TQueryFieldBuilder;
 begin
    for F in Fields do
+   begin
+      // skip GetDate() as required field
+      if (not ((F is TCustomSQLField) and (Length((F as TCustomSQLField).GetRequiredFields) = 0)))  then
       AddFieldToArray(F, RequiredFields);
+   end;
    for Sub in FSubStatements do
       Sub.AddRequiredFields(RequiredFields);
 end;
@@ -1127,6 +1194,38 @@ begin
    AddSQL(SQL_CloseBracket);
 end;
 
+function TQueryFieldBuilder.Count(const aField: TBaseField): IFloatStatement;
+begin
+   Result := Self;
+   AddSQL(SQL_Count);
+   AddField(aField);
+   AddSQL(SQL_CloseBracket);
+end;
+
+function TQueryFieldBuilder.Count(const aSubStatement: IStatementBase): IFloatStatement;
+begin
+   Result := Self;
+   AddSQL(SQL_Count);
+   AddSubStatement(aSubStatement);
+   AddSQL(SQL_CloseBracket);
+end;
+
+function TQueryFieldBuilder.CountDistinct(const aField: TBaseField): IFloatStatement;
+begin
+   Result := Self;
+   AddSQL(SQL_Count+SQL_Spatie+SQL_Distinct);
+   AddField(aField);
+   AddSQL(SQL_CloseBracket);
+end;
+
+function TQueryFieldBuilder.CountDistinct(const aSubStatement: IStatementBase): IFloatStatement;
+begin
+   Result := Self;
+   AddSQL(SQL_Count+SQL_Spatie+SQL_Distinct);
+   AddSubStatement(aSubStatement);
+   AddSQL(SQL_CloseBracket);
+end;
+
 function TQueryFieldBuilder.Abs(const aField: TBaseField): IFloatStatement;
 begin
    Result := Self;
@@ -1183,6 +1282,18 @@ begin
    AddSQL(SQL_Is + SQL_Spatie + SQL_Not + SQL_Spatie + SQL_Null + SQL_CloseBracket)
 end;
 
+function TQueryFieldBuilder.InSet: IConditionCompareToMulti;
+begin
+   Result := Self;
+   AddSQL(SQL_In);
+end;
+
+function TQueryFieldBuilder.NotInSet: IConditionCompareToMulti;
+begin
+   Result := Self;
+   AddSQL(SQL_Not_In);
+end;
+
       { IConditionCompare }
 function TQueryFieldBuilder.Coalesce(const aField: TBaseField): ICoalesceNext;
 begin
@@ -1222,6 +1333,30 @@ begin
    AddSQL(SQL_Round);
    AddField(aField);
    AddSQL(SQL_Komma+IntToStr(Precision)+SQL_CloseBracket);
+end;
+
+function TQueryFieldBuilder.Replace(const aField: TBaseField; const OldPattern, NewPattern: IStringStatement): IStringStatement;
+begin
+   Result := Self;
+   AddSQL(SQL_Replace);
+   AddField(aField);
+   AddSQL(SQL_Komma);
+   AddSubStatement(OldPattern);
+   AddSQL(SQL_Komma);
+   AddSubStatement(NewPattern);
+   AddSQL(SQL_CloseBracket);
+end;
+
+function TQueryFieldBuilder.Replace(const aSubStatement, OldPattern, NewPattern: IStringStatement): IStringStatement;
+begin
+   Result := Self;
+   AddSQL(SQL_Replace);
+   AddSubStatement(aSubStatement);
+   AddSQL(SQL_Komma);
+   AddSubStatement(OldPattern);
+   AddSQL(SQL_Komma);
+   AddSubStatement(NewPattern);
+   AddSQL(SQL_CloseBracket);
 end;
 
 function TQueryFieldBuilder.Round(const aSubStatement: IFloatStatement; const Precision: Integer): IIntegerStatement;
@@ -1283,6 +1418,40 @@ begin
    Result := Self;
    AddSubStatement(aSubStatement);
    CloseBracket;
+end;
+
+      { IConditionCompareToMulti }
+function TQueryFieldBuilder.Values(const aValues: array of Variant): ICondition;
+var StrValue: string;
+    i: Integer;
+begin
+   Result := Self;
+   StrValue := '';
+   for i := 0 to Length(aValues)-1 do
+      AddToCSVList(VariantToSQLString(aValues[i]), StrValue);
+   AddSQL('('+StrValue+')'+ SQL_Spatie + SQL_CloseBracket);
+end;
+
+function TQueryFieldBuilder.Values(const aValues: array of string): ICondition;
+var StrValue: string;
+    i: Integer;
+begin
+   Result := Self;
+   StrValue := '';
+   for i := 0 to Length(aValues)-1 do
+      AddToCSVList(VariantToSQLString(aValues[i]), StrValue);
+   AddSQL('('+StrValue+')'+ SQL_Spatie + SQL_CloseBracket);
+end;
+
+function TQueryFieldBuilder.Values(const aValues: array of Integer): ICondition;
+var StrValue: string;
+    i: Integer;
+begin
+   Result := Self;
+   StrValue := '';
+   for i := 0 to Length(aValues)-1 do
+      AddToCSVList(VariantToSQLString(aValues[i]), StrValue);
+   AddSQL('('+StrValue+')'+ SQL_Spatie + SQL_CloseBracket);
 end;
 
       { IStatementBase }
@@ -1485,7 +1654,7 @@ end;
 
 function TSQLDoubleField.GetFieldType: TFieldType;
 begin
-   Result := ftFieldCurrency;
+   Result := ftFieldDouble;
 end;
 
 { TSQLCurrencyField }
@@ -1495,9 +1664,9 @@ begin
    Result := ftFieldCurrency;
 end;
 
-{ TCustomSQLDateTimeField }
+{ TSQLDateTimeFieldBase }
 
-function TSQLDateTimeField.GetFieldType: TFieldType;
+function TSQLDateTimeFieldBase.GetFieldType: TFieldType;
 begin
    Result := ftFieldDateTime;
 end;

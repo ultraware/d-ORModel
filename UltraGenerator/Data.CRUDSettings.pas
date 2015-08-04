@@ -24,7 +24,7 @@ unit Data.CRUDSettings;
 interface
 
 uses
-  Graphics, Classes, SysUtils, Controls,
+  Graphics, Classes, SysUtils, Controls, Meta.Data,
   XMLFile, RttiClasses
   ;
 
@@ -56,9 +56,12 @@ type
     FMax: Double;
     FMin: Double;
     FSkipDefault: Boolean;
+    FVisible: Boolean;
+    FIsAutoInc: Boolean;
   public
     procedure AfterConstruction; override;
     function  FieldNameDelphi: string;
+    procedure SetFieldType(const aFieldType: Meta.Data.TFieldType);
   published
     property FieldName    : string   read FFieldName          write FFieldName;
     property Displaylabel : string   read FFieldDisplaylabel  write FFieldDisplaylabel;
@@ -78,6 +81,7 @@ type
     property MinValue     : Double   read FMin                write FMin;
     property MaxValue     : Double   read FMax                write FMax;
 
+    property IsAutoInc    : Boolean  read FIsAutoInc          write FIsAutoInc;
     property IsPK         : Boolean  read FIsPK               write FIsPK;
     property IsFK         : boolean  read FIsFK               write FIsFK;
     property FKTable      : string   read FFKTable            write FFKTable;
@@ -92,6 +96,7 @@ type
     property Comment      : string   read FComment            write FComment;
   	 property HasDefault   : Boolean  read FHasDefaultValue    write FHasDefaultValue;
     property SkipDefault  : Boolean  read FSkipDefault        write FSkipDefault;
+    property Visible      : Boolean  read FVisible            write FVisible Default True;
   end;
 
   TCRUDFieldArray = array of TCRUDField;
@@ -102,26 +107,89 @@ type
     FFields: TCRUDFieldArray;
     FComment: string;
     FDescription: string;
+    FExists: Boolean;
+    FIsShared: Boolean;
+    FIsDataBaseTable: Boolean;
+    FCanLoadFromDB: Boolean;
+    FTableFunctionParameterCount: Integer;
   public
     function  FieldCount: Integer;
     function  FindField(const aFieldName: string; const toevoegen: boolean): TCRUDField;
     function  AddField: TCRUDField;
     procedure DeleteField(aField: TCRUDField);
-
+    procedure ClearFields;
     function  TableNameDelphi: string;
+    //function  BOFilename: string;
+    function  CRUDFileName: string;
+    function  MetaFileName: string;
+    function  ModelFileName: string;
+
+    property  IsDataBaseTable: Boolean read FIsDataBaseTable write FIsDataBaseTable;
+    property  CanLoadFromDB: Boolean read FCanLoadFromDB write FCanLoadFromDB;
+    property  Exists: Boolean read FExists write FExists;
+    /// wordt voor het laden van tabellen op false gezet
+    /// , alles wat wordt geladen komt op True
+    /// en na het laden wordt alles wat nog op false staat weggegooid
   published
     property TableName : string         read FName   write FName;
     property Fields    : TCRUDFieldArray read FFields write FFields;
 
     property Description  : string   read FDescription        write FDescription;
     property Comment      : string   read FComment            write FComment;
+    property TableFunctionParameterCount: Integer read FTableFunctionParameterCount write FTableFunctionParameterCount;
+    property IsShared     : Boolean  read FIsShared           write FIsShared;
+    //property CustomBOName: string read FCustomBOName write FCustomBOName;
   end;
 
   TCRUDTableArray = array of TCRUDTable;
 
+  TTableName = class(TRttiEnabled)
+  private
+    FName: string;
+  published
+    property Name: string read FName write FName;
+  end;
+
+  TTableNameArray = array of TTableName;
+
+  {
+  TCombinedBO = class(TRttiEnabled)
+  private
+    FTableNameSubs: TTableNameArray;
+    FMainTable: string;
+    FBOName: string;
+    FIsShared: Boolean;
+  public
+    function AddSubtabel(const TabelNaam: string): TTableName;
+    procedure DeleteSubtabel(const SubTabel: TTableName);
+  published
+    property MainTable: string read FMainTable write FMainTable;
+    property BOName: string read FBOName write FBOName;
+    property IsShared: Boolean  read FIsShared write FIsShared;
+    property TableNameSubs: TTableNameArray read FTableNameSubs write FTableNameSubs;
+  end;
+
+  TCombinedBOArray = array of TCombinedBO;
+ }
+
+  TCRUDDBSettings = class(TRttiEnabled)
+  private
+    FDBUser: string;
+    FDB: string;
+    FDBPwd: string;
+    FServer: string;
+  published
+    property Server: string read FServer write FServer;
+    property DB: string read FDB write FDB;
+    property DBUser: string  read FDBUser write FDBUser;
+    property DBPwd: string read FDBPwd write FDBPwd;
+  end;
+
   TCRUDSettings = class(TRttiEnabled)
   private
     FTables: TCRUDTableArray;
+    //FCombinedBOs: TCombinedBOArray;
+    FDB: TCRUDDBSettings;
   public
     function  TableCount: Integer;
 
@@ -131,9 +199,15 @@ type
     function  FindTable(const aTableName : string; const toevoegen : boolean) : TCRUDTable;
     procedure DeleteTable(const aTableRow: TCRUDTable);
 
+    //function FindCombinedBO(const aTable: TCRUDTable): TCombinedBO;
+    //procedure AddCombinedBO(const MainTableName: string);
+    //procedure DeleteCombinedBO(const aTableBO: TCombinedBO);
+
     function AddTable : TCRUDTable;
   published
     property Tables : TCRUDTableArray read FTables write FTables;
+    //property CombinedBOs: TCombinedBOArray read FCombinedBOs write FCombinedBOs;
+    property DB: TCRUDDBSettings read FDB write FDB;
   end;
 
 function  CRUDSettings: TCRUDSettings;
@@ -141,7 +215,8 @@ function  CRUDSettings: TCRUDSettings;
 implementation
 
 uses
-  Forms, Windows, fMain, Dialogs, UltraStringUtils;
+  Dialogs, StrUtils, Variants, TypInfo, XMLIntf, Xml.XMLDoc,
+  UltraStringUtils, uGenerator;
 
 { TCRUDSettings }
 
@@ -164,6 +239,7 @@ begin
   Result := StringReplace(Result, ' ', '', [rfReplaceAll]);
   Result := StringReplace(Result, '-', '', [rfReplaceAll]);
   Result := StringReplace(Result, '$', '', [rfReplaceAll]);
+   Result := StringReplace(Result, '#', '', [rfReplaceAll]);
   if StringIn(Result, 'Object,Type,Procedure,Sort')  then
     Result := Result + '_'
 end;
@@ -177,21 +253,25 @@ end;
 
 procedure TCRUDSettings.DeleteTable(const aTableRow: TCRUDTable);
 var
-  idxRow : Integer;
+  idxRow,j: Integer;
   temp   : TCRUDTableArray;
-  j : integer;
 begin
-  for idxRow := Low(FTables) to High(FTables) do
+   for idxRow := low(FTables) to high(FTables) do
   begin
     if FTables[idxRow] = aTableRow then
     begin
-      temp := Copy(FTables, Low(FTables), idxRow);
-      SetLength(temp, Length(FTables)-1);
-      for j := idxRow+1 to High(FTables) do
+         temp := Copy(FTables, low(FTables), idxRow);
+         SetLength(temp, length(FTables) - 1);
+         for j := idxRow + 1 to high(FTables) do
         temp[j-1] := FTables[j];
       FTables := temp;
     end;
   end;
+   // opruimen van gegenereerde code van tabel
+   sysUtils.DeleteFile(aTableRow.CRUDFileName);
+   sysUtils.DeleteFile(aTableRow.MetaFileName);
+   sysUtils.DeleteFile(aTableRow.ModelFileName);
+
 end;
 
 function TCRUDSettings.FindTable(const aTableName: string; const toevoegen : boolean) : TCRUDTable;
@@ -205,7 +285,7 @@ begin
     begin
       if SameText(Tables[idxName].TableName, aTableName) then
       begin
-        Result := Tables[idxname];
+        Result := Tables[idxName];
         break;
       end;
     end;
@@ -218,12 +298,35 @@ begin
 end;
 
 procedure TCRUDSettings.LoadFromSettingsFile;
+
+   procedure AlleVeldenOpDefaultVisible;
+   var aTable: TCRUDTable;
+       aField: TCRUDField;
+   begin
+      for aTable in Tables do
+      begin
+         for aField in aTable.Fields do
+            aField.Visible := (not aField.IsPK);
+      end;
+      // Alle nieuwe velden worden standaard Visible
+   end;
+
 var
   sFile: string;
+  xmlFile: IXMLDocument;
 begin
-   sFile := TfrmMain.OutputCRUDPath + cCRUDSettings_XML;
+   sFile := TGeneratorSettings.OutputSettingsFile;
+
   if FileExists(sFile) then
-    LoadFromFile(sFile, Self)
+   begin
+      LoadFromFile(sFile, Self);
+      XMLFile := TXMLDocument.Create(nil);
+      XMLFile.LoadFromFile(sFile);
+      if VarIsNull(xmlFile.ChildNodes.FindNode('CRUDSettings').ChildNodes.FindNode('Tables').ChildNodes.FindNode('Fields').Attributes['Visible']) then
+         AlleVeldenOpDefaultVisible;
+   end
+  else
+    ShowMessage(Format('Geen xml file gevonden op %s. Bij het opslaan wordt file hier aangemaakt',[sFile]));
 end;
 
 procedure TCRUDSettings.SaveToSettingsFile;
@@ -231,7 +334,7 @@ var
   oldThousandSeparator, oldDecimalSeparator: Char;
   sFile: string;
 begin
-  sFile := TfrmMain.OutputCRUDPath + cCRUDSettings_XML;
+   sFile := TGeneratorSettings.OutputSettingsFile;
 
   //default XML floating point is US style
   oldThousandSeparator := FormatSettings.ThousandSeparator;
@@ -241,7 +344,7 @@ begin
   try
     //remove readonly attribute
     if FileIsReadOnly(sFile) then
-      FileSetReadOnly(sFile, false);
+         FileSetReadOnly(sFile, False);
 
     SaveToFile(sFile, CRUDSettings);
   finally
@@ -264,19 +367,20 @@ begin
   FFields[High(FFields)] := Result;
 end;
 
-function ConcatArrays(A1, A2: TCRUDFieldArray): TCRUDFieldArray;
-var
-  i: Integer;
-begin
-  SetLength( Result, High(A1) + High(A2) + 2 );
-  for i := 0 to High(A1) do
-    Result[i]:= A1[i];
-
-  for i := 0 to High(A2) do
-    Result[High(A1)+1+i]:= A2[i];
-end;
-
 procedure TCRUDTable.DeleteField(aField: TCRUDField);
+
+  function ConcatArrays(A1, A2: TCRUDFieldArray): TCRUDFieldArray;
+  var
+    i: Integer;
+  begin
+    SetLength( Result, High(A1) + High(A2) + 2 );
+    for i := 0 to High(A1) do
+      Result[i]:= A1[i];
+
+    for i := 0 to High(A2) do
+      Result[High(A1)+1+i]:= A2[i];
+  end;
+
 var
   i, iFound: Integer;
   temparray: TCRUDFieldArray;
@@ -299,14 +403,38 @@ begin
   FFields := temparray;
 end;
 
+procedure TCRUDTable.ClearFields;
+begin
+   SetLength(FFields, 0);
+end;
+
+function TCRUDTable.TableNameDelphi: string;
+begin
+   Result := DelphiName(TableName);
+end;
+
+function TCRUDTable.CRUDFileName: string;
+begin
+   Result := TGeneratorSettings.OutputCRUDPath+ 'CRUD.' + TableNameDelphi + '.pas';
+end;
+
+function TCRUDTable.MetaFileName: string;
+begin
+   Result := TGeneratorSettings.OutputCRUDPath+ 'Meta.' + TableNameDelphi + '.pas';
+end;
+
+function TCRUDTable.ModelFileName: string;
+begin
+   Result := TGeneratorSettings.OutputCRUDPath+ 'Model.' + TableNameDelphi + '.pas';
+end;
+
 function TCRUDTable.FieldCount: Integer;
 begin
   Result := Length(FFields);
 end;
 
 function TCRUDTable.FindField(const aFieldName: string; const toevoegen : boolean) : TCRUDField;
-var
-  idxField : integer;
+var idxField : integer;
 begin
   Result := nil;
   if aFieldName <> '' then
@@ -323,13 +451,11 @@ begin
     begin
       Result           := AddField;
       Result.FieldName := aFieldName;
+         // default properties zetten
+         Result.SkipDefault := False;
+         Result.Visible := True;
     end;
   end;
-end;
-
-function TCRUDTable.TableNameDelphi: string;
-begin
-   Result := DelphiName(TableName);
 end;
 
 { TCRUDField }
@@ -343,6 +469,11 @@ end;
 function TCRUDField.FieldNameDelphi: string;
 begin
    Result := DelphiName(FieldName);
+end;
+
+procedure TCRUDField.SetFieldType(const aFieldType: Meta.Data.TFieldType);
+begin
+   FieldType := TypInfo.GetEnumName(TypeInfo(Meta.Data.TFieldType), Ord(aFieldType) )
 end;
 
 initialization

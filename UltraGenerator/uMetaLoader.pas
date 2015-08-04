@@ -37,14 +37,17 @@ implementation
 uses
   SysUtils, Classes, Typinfo, Variants, StrUtils,
   Data.Win.ADODB, Db, Math,
-  DB.Connection, Meta.Data, DB.ConnectionPool, Data.CustomTypes,
-  DB.Connection.SQLServer, Data.CRUD, DB.Settings, Data.DataRecord;
+  DB.Connection, Meta.Data, DB.ConnectionPool,
+  //Data.CustomTypes,
+  DB.Connection.SQLServer, Data.CRUD, DB.Settings, Data.DataRecord,
+  Winapi.ADOInt, UltraStringUtils;
 
 function FieldTypeConversion(const aDelphiFieldType: DB.TFieldType): Meta.Data.TFieldType;
 begin
   case aDelphiFieldType of
-  //  ftUnknown: ;
-    ftAutoInc:    Result := ftFieldID;
+    //ftUnknown: ;
+    ftAutoInc:    Result := ftFieldID;          //most time autoinc is for PK, this is checked later
+    //ftAutoInc:    Result := ftFieldInteger;   //ID field is only for PK's, autoinc is not always a PK(?)
 
     ftString:     Result := ftFieldString;
     ftSmallint,
@@ -90,7 +93,7 @@ begin
 //    ftVariant:    Result := ftFieldVariant;
 //    ftInterface: ;
 //    ftIDispatch: ;
-//    ftGuid: ;
+    ftGuid: Result := ftFieldString;
 //    ftOraTimeStamp: ;
 //    ftOraInterval: ;
 //    ftShortint,
@@ -255,7 +258,11 @@ begin
 //    ftVariant:    Result := ftFieldVariant;
 //    ftInterface: ;
 //    ftIDispatch: ;
-//    ftGuid: ;
+    ftGuid:
+    begin
+      aMin := 0;
+      aMax := 0;
+    end;
 //    ftOraTimeStamp: ;
 //    ftOraInterval: ;
 //    ftConnection: ;
@@ -275,7 +282,7 @@ class procedure TMetaLoader.FillFieldsForTable(const aTable: TCRUDTable);
 var
   connection: TBaseADOConnection;
   mssql: TMSSQLConnection;
-  ssql, sfield, s: string;
+  ssql, sfield, s, paramstring, tableName: string;
   field: TCRUDField;
   newfields: TCRUDFieldArray;
 
@@ -285,7 +292,11 @@ var
   f: TField;
   dbconn: TDBConfig;
   fmin, fmax: Double;
+  i: Integer;
+  NewTable: Boolean;
 begin
+  if (not aTable.CanLoadFromDB) then Exit; // TempTables
+
   dbconn := TDBSettings.Instance.GetDBConnection('', dbtNone);  //get specific settings or first in case no dbtype etc
   connection := TDBConnectionPool.GetConnectionFromPool(dbconn) as TBaseADOConnection;
 
@@ -297,36 +308,35 @@ begin
 
     //dummy sql (with no results) to get metadata
     if mssql.IsSQLServerCE then
-    begin
-      ssql := Format('select * from [%s] where 1 = 2', [aTable.TableName]);  //top does not work with CE?
-      with TADOCommand.Create(nil) do
-      try
-        ConnectionString := mssql.ADOConnection.ConnectionString;
-        CommandText   := ssql;
-        qry.recordset := Execute;
-      finally
-        Free;
-      end;
-      //qry.Recordset := mssql.ADOConnection.Execute(ssql);     does not work?
-    end
+      ssql := Format('select * from %s where 1 = 2', [aTable.TableName])  //top does not work with CE?
     else
     begin
-      ssql := Format('select top 0 * from %s where 1 = 2', [aTable.TableName]);
+      if (aTable.TableFunctionParameterCount > 0) then
+    begin
+        paramstring := '';
+        for i := 0 to aTable.TableFunctionParameterCount -1 do
+          AddToCSVList('null', paramstring);
+        tableName := aTable.TableName+'('+paramstring+')';
+    end
+    else
+      tableName := aTable.TableName;
+      ssql := Format('select * from %s where 1 = 2', [tableName]);
+    end;
 
-      //first use the internal delphi field converion (also for precision handling)
-      qry.Connection := mssql.ADOConnection;
-      qry.SQL.Text   := ssql;
-      try
-        qry.Open;
-      except on e: exception do
-        begin
-          s := mssql.ADOConnection.Errors[0].Source;
-          s := mssql.ADOConnection.Errors[0].Description;
-          s := mssql.ADOConnection.Errors[0].SQLState;
-        end;
+    //first use the internal delphi field converion (also for precision handling)
+    qry.Connection := mssql.ADOConnection;
+    qry.SQL.Text   := ssql;
+    try
+      qry.Open;
+    except on e: exception do
+      begin
+        s := mssql.ADOConnection.Errors[0].Source;
+        s := mssql.ADOConnection.Errors[0].Description;
+        s := mssql.ADOConnection.Errors[0].SQLState;
       end;
     end;
 
+    NewTable := (Length(aTable.Fields) = 0);
     for f in qry.Fields do
     begin
       field := aTable.FindField(f.FieldName, True{auto create});
@@ -357,6 +367,7 @@ begin
         ft := FieldTypeConversion(f.DataType);
         field.FieldType := TypInfo.GetEnumName(TypeInfo(Meta.Data.TFieldType), Ord(ft) );
       end;
+      field.IsAutoInc := (f.DataType = ftAutoInc);
       field.Required  := f.Required;
     end;
 
@@ -400,6 +411,18 @@ begin
         if field <> nil then
         begin
           field.Required := not ds.FieldByName('IS_NULLABLE').AsBoolean;
+
+          //get real fieldtype of autoinc fields (most time it is integer)
+          //note: ftFieldID is changed here into ftFieldInteger!
+          //ftFieldID is only set later on for PK fields
+          if field.IsAutoInc then
+          begin
+            //https://msdn.microsoft.com/en-us/library/windows/desktop/ms675318(v=vs.85).aspx
+            if ds.FieldByName('DATA_TYPE').AsInteger in [{3}adInteger, adBigInt] then
+              field.FieldType := TypInfo.GetEnumName(TypeInfo(Meta.Data.TFieldType), Ord(ftFieldInteger) )
+            else
+              Assert(False, 'Unsupported autoinc data type: ' + ds.FieldByName('DATA_TYPE').AsString);
+          end;
 
           if ds.FieldByName('COLUMN_HASDEFAULT').AsBoolean then
           begin
@@ -458,12 +481,15 @@ begin
       if field <> nil then
       begin
         field.IsPK := True;
+        if NewTable then
+          field.Visible := False;
         field.FieldType := TypInfo.GetEnumName(TypeInfo(Meta.Data.TFieldType), Ord(ftFieldID) );
       end;
       ds.Next;
     end;
 
     ds.close;
+    qry.Connection := mssql.ADOConnection;
     if mssql.IsSQLServerCE then
     begin
       with TADOCommand.Create(nil) do
@@ -481,7 +507,6 @@ begin
     end
     else
     begin
-      qry.Connection := mssql.ADOConnection;
       ds.CommandText   :=
         Format( 'SELECT o2.name, col_name(fk.fkeyid, fk.fkey) as col2, o.name, col_name(fk.rkeyid, fk.rkey) as col' + #13 +
                 'FROM sysobjects o' + #13 +

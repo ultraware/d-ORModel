@@ -8,7 +8,7 @@ object GUITestRunner: TGUITestRunner
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
-  Font.Name = 'MS Sans Serif'
+  Font.Name = 'Segoe UI'
   Font.Pitch = fpVariable
   Font.Style = []
   Icon.Data = {
@@ -424,7 +424,7 @@ object GUITestRunner: TGUITestRunner
         Font.Charset = ANSI_CHARSET
         Font.Color = clWindowText
         Font.Height = -11
-        Font.Name = 'MS Sans Serif'
+        Font.Name = 'Segoe UI'
         Font.Pitch = fpVariable
         Font.Style = []
         Lines.Strings = (

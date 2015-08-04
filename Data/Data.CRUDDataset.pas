@@ -1,7 +1,8 @@
 {***************************************************************************}
 {                                                                           }
-{           d'ORModel - Model based ORM for Delphi                          }
-{           Copyright (C) 2013-2014 www.ultraware.nl                        }
+{           Delphi Spring Framework                                         }
+{                                                                           }
+{           Copyright (C) 2009-2010 Delphi Spring Framework                 }
 {                                                                           }
 {           Dataset is based on part of "Delphi Spring Framework"           }
 {           http://delphi-spring-framework.googlecode.com                   }
@@ -107,9 +108,9 @@ type
     function IsSequenced: Boolean; override;
     function GetFieldData(aField: TField; aBuffer: Pointer): Boolean; overload; override;
     //{$ifdef COMPILER_12_UP}
-    function GetFieldData(aField: TField; aBuffer: TValueBuffer): Boolean; overload; override;
-    function GetFieldData(aFieldNo: Integer; aBuffer: TValueBuffer): Boolean; overload; override;
-    function GetFieldData(aField: TField; aBuffer: TValueBuffer; aNativeFormat: Boolean): Boolean; overload; override;
+    function GetFieldData(aField: TField; {$IF COMPILERVERSION >= 27}var{$IFEND} aBuffer: TValueBuffer): Boolean; overload; override;
+    function GetFieldData(aFieldNo: Integer; {$IF COMPILERVERSION >= 27}var{$IFEND} aBuffer: TValueBuffer): Boolean; overload; override;
+    function GetFieldData(aField: TField; {$IF COMPILERVERSION >= 27}var{$IFEND} aBuffer: TValueBuffer; aNativeFormat: Boolean): Boolean; overload; override;
     //{$endif}
 
     procedure Resync(Mode: TResyncMode); override;
@@ -164,11 +165,13 @@ type
     function  GetCurrentBookmark: TBookmark; override;
 
     procedure InternalOpen; override;
+    procedure InternalClose; override;
     function  IsCursorOpen: Boolean; override;
     function  GetRecordCount: Integer; override;
 
     procedure InternalFirst; override;
     procedure InternalLast; override;
+    procedure InternalRefresh; override;
 
     function GetNextRecords: Integer; override;
     function GetNextRecord: Boolean; override;
@@ -179,6 +182,9 @@ type
 
     function MoveBy(Distance: Integer): Integer; override;
     function GetCurrentDataRecord: TDataRecord; override;
+    procedure RefreshQuery;
+
+    function  CompareBookmarks(Bookmark1, Bookmark2: TBookmark): Integer; override;
 
     property SourceCRUD: TBaseDataCRUD read FSourceCRUD write SetSourceCRUD;
     property OwnsSourceCRUD: boolean read FOwnsSourceCRUD write FOwnsSourceCRUD;
@@ -273,11 +279,12 @@ Begin
 
   for f in GetCurrentDataRecord do
   begin
-    UniqueName := f.DisplayLabel;
+    UniqueName := f.PropertyName;     //propertyname is always uniqe
     Index := 1;
     while (FieldDefs.IndexOf(UniqueName) >= 0) do
     begin
-      UniqueName := f.DisplayLabel + IntToStr(Index);
+      //UniqueName := f.DisplayLabel + IntToStr(Index);
+      UniqueName := f.PropertyName + IntToStr(Index);
       Inc(Index);
     end;
 
@@ -435,11 +442,11 @@ begin
         if IsEmpty then
           Result := nil
         else
-          Result := ActiveBuffer;
+          Result := TRecordBuffer(ActiveBuffer);   //XE6+
       end;
     dsEdit, dsInsert:
       begin
-        Result := ActiveBuffer;
+        Result := TRecordBuffer(ActiveBuffer);
       end;
     else
       begin
@@ -484,7 +491,7 @@ begin
 end;
 
 //{$ifndef COMPILER_12_UP}
-function TBaseRecordDataset.GetFieldData(aField: TField; aBuffer: TValueBuffer): Boolean;
+function TBaseRecordDataset.GetFieldData(aField: TField; {$IF COMPILERVERSION >= 27}var{$IFEND} aBuffer: TValueBuffer): Boolean;
 begin
   Result := GetFieldData(aField, @aBuffer[0]);
 end;
@@ -563,7 +570,7 @@ end;
 
 procedure TBaseRecordDataset.InternalGotoBookmark(Bookmark: TBookmark);
 begin
-  Assert(false, 'function must be overriden in descendant');
+  Assert(false, 'function must be overridden in descendant');
 end;
 
 procedure TBaseRecordDataset.InternalGotoBookmark(Bookmark: Pointer);
@@ -731,12 +738,12 @@ begin
 end;
 
 //{$IFNDEF COMPILER_12_UP}
-function TBaseRecordDataset.GetFieldData(aFieldNo: Integer; aBuffer: TValueBuffer): Boolean;
+function TBaseRecordDataset.GetFieldData(aFieldNo: Integer; {$IF COMPILERVERSION >= 27}var{$IFEND} aBuffer: TValueBuffer): Boolean;
 begin
   Result := GetFieldData(Self.Fields[aFieldNo], @aBuffer[0]);
 end;
 
-function TBaseRecordDataset.GetFieldData(aField: TField; aBuffer: TValueBuffer; aNativeFormat: Boolean): Boolean;
+function TBaseRecordDataset.GetFieldData(aField: TField; {$IF COMPILERVERSION >= 27}var{$IFEND} aBuffer: TValueBuffer; aNativeFormat: Boolean): Boolean;
 begin
   if Length(aBuffer)= 0 then
     Result := GetFieldData(aField, nil)
@@ -746,6 +753,13 @@ end;
 //{$ENDIF}
 
 { TBaseCRUDDataset }
+
+procedure TBaseCRUDDataset.InternalClose;
+begin
+  inherited;
+  if SourceCRUD <> nil then
+    SourceCRUD.QueryFindClose;
+end;
 
 procedure TBaseCRUDDataset.InternalFirst;
 begin
@@ -850,10 +864,66 @@ begin
     FRowRecNo := -1;
 end;
 
+procedure TBaseCRUDDataset.InternalRefresh;
+var Bm: TBookMark;
+    bIsEof: Boolean;
+    PrevSort: string;
+begin
+   if Active then
+   begin
+      Bm := nil;
+      bIsEof := Eof;
+      if IsSequenced and (RecNo = RecordCount) then //no bookmark problems with ADO
+         bIsEof := True;
+      if (not IsEmpty) then
+      begin
+         Bm := GetBookMark;
+         PrevSort := SortString;
+      end
+      else
+         PrevSort := '';
+
+      try
+         Close;
+         Open;
+      finally
+         if (not IsEmpty) and (PrevSort <> SortString) then
+         begin
+            SortString := PrevSort;
+            if not bIsEOF then
+               First;
+         end;
+      end;
+
+      if Assigned(Bm) then
+      begin
+         try
+            if bIsEof then  //only if user was at end, or in ADO
+               Last
+            else
+               if (not IsEmpty) and BookMarkValid(Bm) then
+                  GotoBookMark(Bm);
+         except
+            // ...
+         end;
+         FreeBookMark(Bm);
+      end;
+   end;
+end;
+
+function TBaseCRUDDataset.CompareBookmarks(Bookmark1, Bookmark2: TBookmark): Integer;
+begin
+   if Assigned(SourceCRUD) then
+      Result := SourceCRUD.QueryFindCompareBookmark(Bookmark1, Bookmark2)
+   else
+      Result := inherited;
+end;
+
 destructor TBaseCRUDDataset.Destroy;
 begin
   if OwnsSourceCRUD then
     SourceCRUD.Free;
+  FSourceCRUD := nil;
   inherited;
 end;
 
@@ -941,10 +1011,11 @@ begin
   CheckActive;
   UpdateCursorPos;
 
-  if SourceCRUD <> nil then
+  if (SourceCRUD <> nil) and (SourceCRUD.FindData <> nil) then // Dont sort empty dataset
+  begin
     SourceCRUD.QueryFindSortString := Value;
-
-  Resync([]);
+    Resync([]);
+  end;
 end;
 
 function TBaseCRUDDataset.IsCursorOpen: Boolean;
@@ -957,6 +1028,11 @@ end;
 function TBaseCRUDDataset.MoveBy(Distance: Integer): Integer;
 begin
   Result := inherited;
+end;
+
+procedure TBaseCRUDDataset.RefreshQuery;
+begin
+   InternalRefresh;
 end;
 
 procedure TBaseCRUDDataset.SetSourceCRUD(const Value: TBaseDataCRUD);

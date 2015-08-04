@@ -41,6 +41,7 @@ type
     FName: string;
     FLastExecutedSQL: string;
   protected
+    FIsOpened: Boolean;
     FTransactionLevel: Integer;
     procedure StartTransaction;virtual;
     procedure CommitTransaction;virtual;
@@ -55,6 +56,8 @@ type
 
     function Clone: TBaseConnection;virtual;
 
+    function  IsOpened: Boolean;
+    function  IsOpen: Boolean;virtual;abstract;
     procedure Open;virtual;
     procedure Close;virtual;
 
@@ -116,6 +119,11 @@ end;
 function TBaseConnection.IsInTransaction: Boolean;
 begin
   Result := (FTransactionLevel > 0);
+end;
+
+function TBaseConnection.IsOpened: Boolean;
+begin
+  Result := FIsOpened;
 end;
 
 procedure TBaseConnection.Open;

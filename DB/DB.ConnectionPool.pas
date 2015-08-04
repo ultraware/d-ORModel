@@ -54,7 +54,7 @@ type
     class property  MaxPoolSize: Integer read FMaxPoolSize write SetMaxPoolSize;
 
     class function  GetConnectionFromPool(aDBConfig: TDBConfig): TBaseConnection;
-    class function  HasConnections(aDBConfig: TDBConfig): Boolean;
+    class function  HasConnections(aDBConfig: TDBConfig; aOnlyOpenConnections: Boolean = false): Boolean;
     class procedure PutConnectionToPool(aDBConfig: TDBConfig; aConnection: TBaseConnection);
   end;
 
@@ -79,6 +79,7 @@ type
 
 threadvar
   _ThreadTransactionConnections: TDictionary<TDBConfig, TBaseConnection>;
+  _ThreadConnections: TDictionary<TDBConfig, TPoolItem>;
 
 { TPoolItem }
 
@@ -117,6 +118,9 @@ var
   i: Integer;
   lpool: TPool;
 begin
+  if aDBConfig = nil then
+    raise Exception.Create('No DB configuration available');
+
   //pending transaction in current tread? then use the same connection!
   if _ThreadTransactionConnections <> nil then
   begin
@@ -128,11 +132,29 @@ begin
       end;
   end;
 
+  //re-use connection when connection is kept open (e.g. by ultraquery dataset, connection is put back on SetActive(false))
+  if _ThreadConnections = nil then
+  begin
+    _ThreadConnections := TDictionary<TDBConfig, TPoolItem>.Create;
+    TThreadFinalization.RegisterThreadObject(_ThreadConnections);
+  end;
+  if _ThreadConnections.TryGetValue(aDBConfig, pi) then
+    if pi <> nil then
+    begin
+      //increment lock
+      if not pi.Lock.TryEnter then
+        Assert(False, 'lock should already be owned by this thread!')
+      else
+        Exit(pi.Connection);
+    end;
+
+  //pool per config
   lpool := GetPool(aDBConfig);
 
   //on demand connection: if no connection yet, then connect now
   if (lPool.Count = 0) then
-    TDBConnector.Connect(aDBConfig);
+    //TDBConnector.Connect(aDBConfig);//
+    TDBConnector.AddConnection(aDBConfig);   //default no direct connect (in case our service is started first, then sql server)
 
   Result := nil;
   repeat
@@ -148,6 +170,7 @@ begin
                   (Result.OwnerThreadId = 0) );
           Result.OwnerThreadId := GetCurrentThreadId;
           //item.Lock.Enter;  already locked
+          _ThreadConnections.AddOrSetValue(aDBConfig, pi);
           Exit;
         end;
       end;
@@ -161,7 +184,7 @@ begin
 
         Assert(lpool.First <> nil);
         pi.Connection := lpool.First.Connection.Clone;
-        pi.Connection.Open;
+//        pi.Connection.Open; //pi.Connection.Open;    no direct connect!
         pi.Connection.Name := pi.Connection.Name + format('<poolitem_%d>',[lpool.Count+1]);
         lpool.Add(pi);
 
@@ -169,6 +192,7 @@ begin
         assert( (Result.OwnerThreadId = GetCurrentThreadId) or
                 (Result.OwnerThreadId = 0) );
         Result.OwnerThreadId := GetCurrentThreadId;
+        _ThreadConnections.AddOrSetValue(aDBConfig, pi);
         Exit;
       end;
 
@@ -208,12 +232,27 @@ begin
   end;
 end;
 
-class function TDBConnectionPool.HasConnections(aDBConfig: TDBConfig): Boolean;
+class function TDBConnectionPool.HasConnections(aDBConfig: TDBConfig; aOnlyOpenConnections: Boolean = false): Boolean;
 var
   lpool: TPool;
+  item: TPoolItem;
 begin
-  lpool  := GetPool(aDBConfig);
-  Result := lpool.Count > 0;
+  Result := False;
+
+  Self.Lock;
+  try
+    lpool  := GetPool(aDBConfig);
+    if aOnlyOpenConnections then
+    begin
+      for item in lpool do
+        if item.Connection.IsOpened then
+          Exit(True);
+    end
+    else
+      Result := lpool.Count > 0;
+  finally
+    UnLock;
+  end;
 end;
 
 class procedure TDBConnectionPool.Lock;
@@ -251,8 +290,18 @@ begin
         Assert( not aConnection.IsInTransaction);
         Assert( (aConnection.OwnerThreadId = GetCurrentThreadId) or
                 (aConnection.OwnerThreadId = 0) );
-        aConnection.OwnerThreadId := 0;
 
+        //last item?
+        if TCriticalSection_Ext(item.Lock).FSection.RecursionCount = 1 then
+          _ThreadConnections.AddOrSetValue(aDBConfig, nil)
+        //more open datasets? then decrement the lock but keep in threadvar connection list
+        else if TCriticalSection_Ext(item.Lock).FSection.RecursionCount > 1 then
+        begin
+          item.Lock.Release;
+          Exit;
+        end;
+
+        aConnection.OwnerThreadId := 0;
         item.Lock.Release;
         Exit;
       end;

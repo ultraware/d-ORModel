@@ -1,0 +1,60 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{C258A04D-D4E5-4076-9195-CDEC482CC5BF}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="D:\Delphi\DelphiXE3\Shared\Middleware\MW UnitTest\MiddlewareUnitTests.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="UltraGenerator\UltraGenerator.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="CustomCrudGenerator\CustomCrudGenerator.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="MiddlewareUnitTests">
+        <MSBuild Projects="D:\Delphi\DelphiXE3\Shared\Middleware\MW UnitTest\MiddlewareUnitTests.dproj"/>
+    </Target>
+    <Target Name="MiddlewareUnitTests:Clean">
+        <MSBuild Projects="D:\Delphi\DelphiXE3\Shared\Middleware\MW UnitTest\MiddlewareUnitTests.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="MiddlewareUnitTests:Make">
+        <MSBuild Projects="D:\Delphi\DelphiXE3\Shared\Middleware\MW UnitTest\MiddlewareUnitTests.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="UltraGenerator">
+        <MSBuild Projects="UltraGenerator\UltraGenerator.dproj"/>
+    </Target>
+    <Target Name="UltraGenerator:Clean">
+        <MSBuild Projects="UltraGenerator\UltraGenerator.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="UltraGenerator:Make">
+        <MSBuild Projects="UltraGenerator\UltraGenerator.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="CustomCrudGenerator">
+        <MSBuild Projects="CustomCrudGenerator\CustomCrudGenerator.dproj"/>
+    </Target>
+    <Target Name="CustomCrudGenerator:Clean">
+        <MSBuild Projects="CustomCrudGenerator\CustomCrudGenerator.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="CustomCrudGenerator:Make">
+        <MSBuild Projects="CustomCrudGenerator\CustomCrudGenerator.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="MiddlewareUnitTests;UltraGenerator;CustomCrudGenerator"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="MiddlewareUnitTests:Clean;UltraGenerator:Clean;CustomCrudGenerator:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="MiddlewareUnitTests:Make;UltraGenerator:Make;CustomCrudGenerator:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

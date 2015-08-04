@@ -66,20 +66,22 @@ implementation
 
 uses
   SysUtils, ComObj,
-  Data.CRUD;
+  Data.CRUD, DB.Connection, DB.ConnectionPool;
 
 procedure AddSQLDatabaseSettings(const aServer, aDatabase, aUserName, aPassword: string; const aDBname: string = '';
   aUseAsDefault: Boolean = True; const aProvider: string = ''; aDBType: TDBConnectionType = dbtSQLServer);
-var Connectie: TDBConfig;
+var
+  config: TDBConfig;
+  conn: TBaseConnection;
 begin
-   Connectie := TDBSettings.Instance.GetDBConnection(aDBname, aDBType);
-   if (not Assigned(Connectie)) then
+   config := TDBSettings.Instance.GetDBConnection(aDBname, dbtSQLServer);
+   if (not Assigned(config)) then 
    begin
-      Connectie := TDBConfig.Create;
-      TDBSettings.Instance.AddDBConnection(Connectie);
+      config := TDBConfig.Create;
+      TDBSettings.Instance.AddDBConnection(config);
    end;
 
-   with Connectie do
+   with config do
    begin
       Name   := aDBname;
       DBType := aDBType;
@@ -106,6 +108,14 @@ begin
       else
         Assert(False);
       end;
+   end;
+
+   //use connection with correct settings 
+   conn := TDBConnectionPool.GetConnectionFromPool(config);
+   try
+     conn.SetConfig(config);
+   finally
+     TDBConnectionPool.PutConnectionToPool(config, conn);
    end;
 
    if aUseAsDefault then

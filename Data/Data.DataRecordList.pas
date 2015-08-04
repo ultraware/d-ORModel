@@ -28,6 +28,8 @@ uses
 
 type
   TBaseDataRecordList = class
+  private
+    function GetCurrentRow: Integer;
   protected
     FData: TDataRecord;
     FDataLoaded: Boolean;
@@ -53,15 +55,16 @@ type
     function  Previous: Boolean;
     procedure Last;
     procedure ScrollToRow(aRowNumber: Integer);
+    property  CurrentRow: Integer read GetCurrentRow;
 
     property Data: TDataRecord read FData;
   end;
 
-  TDataRecordList<T: TDataRecord, constructor> = class(TBaseDataRecordList)
+  TDataRecordList<T: TDataRecord> = class(TBaseDataRecordList)
   private
     function GetData: T;
   public
-    constructor Create; virtual;
+    constructor Create; reintroduce; virtual;
 
     property Data: T read GetData;
   end;
@@ -76,7 +79,7 @@ begin
   {$IFDEF VER210}
   FData := TDataRecord(T.Create);
   {$ELSE}
-  FData := T.Create as TDataRecord;
+  FData := TDataRecordClass(T).Create(nil) as TDataRecord;
   {$ENDIF}
 end;
 
@@ -100,9 +103,9 @@ procedure TBaseDataRecordList.ClearAll;
 begin
   FSharedData := False;
   FDataLoaded := False;
-  FData.LoadRecordData(nil);
   FRows := nil;
   FRow := 0;
+  FData.LoadRecordData(nil);
 end;
 
 function TBaseDataRecordList.Count: Integer;
@@ -122,6 +125,13 @@ begin
   FRow := 0;
   if Count > 0 then
     FData.LoadRecordData(@FRows[FRow]);
+end;
+
+function TBaseDataRecordList.GetCurrentRow: Integer;
+begin
+  if not HasDataLoaded then Exit(-1);
+
+  Result := FRow;
 end;
 
 function TBaseDataRecordList.HasDataLoaded: Boolean;

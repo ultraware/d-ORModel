@@ -64,6 +64,7 @@ type
   end;
 
   TQueryType = (qtNone, qtSelect, qtUpdate, qtDelete, qtInsert);
+  TCollateType = (ctGeen, ctDataBaseDefault, ctLatin1_General_CI_AI, ctSQL_Latin1_General_CP1_CS_AS{Case sensitive});
 
   //http://msdn.microsoft.com/en-us/library/ms187373.aspx
   TTableHint = (
@@ -95,6 +96,7 @@ type
   IQueryDetails = interface
     ['{00A8B1B4-E88C-4935-BAFF-CD51D61FB8B5}']
     function QueryType   : TQueryType;
+    function AsQuery: IQueryBuilder;
 
     //function Database: string;
     function Table: string;
@@ -132,6 +134,8 @@ type
     function UpdateIncFieldValues: TUpdateFieldValues;
     function UpdateFieldFields: TUpdateFieldFields;
     function UpdateIncFieldFields: TUpdateFieldFields;
+
+    procedure Clear;
   end;
 
   IWhereDetails = interface
@@ -214,6 +218,7 @@ type
   end;
 
   IWhereNext  = interface
+    function Collate       (const aCollateType: TCollateType): IWhereNext;
     function ISValue       (const aValue: Variant): IWhereEnd;
     function ISNotValue    (const aValue: Variant): IWhereEnd;
     function Equal         (const aValue: Variant         ): IWhereEnd; overload;
@@ -496,6 +501,7 @@ type
     FField   : TBaseField;
     FFieldSelectType: TSelectOperation;
     FCompare : TWhereCompare;
+    FCollateType: TCollateType;
   end;
   //
   TWherePartFieldValue = class(TWherePartField)
@@ -533,6 +539,7 @@ type
   private
     FWhereParts: TWherePartList;
     FActiveWhereField: TBaseField;
+    FActiveCollateType: TCollateType;
     FActiveWhereOperation: TSelectOperation;
     function CompareToValue(const aType: TWhereCompare; const aValue: Variant): IWhere_Standalone;
     function CompareToQuery(const aType: TWhereCompare; const aSubQuery: IQueryBuilder): IWhere_Standalone;
@@ -770,6 +777,7 @@ type
     function UpdateIncFieldValues: TUpdateFieldValues;
     function UpdateFieldFields: TUpdateFieldFields;
     function UpdateIncFieldFields: TUpdateFieldFields;
+    procedure Clear;
   protected
     {ISelect}
     function TopCount(aRecords: Integer): ISelect;
@@ -817,6 +825,7 @@ type
     function PointInTime(const BeginField, EindField, BeginDatumField: TBaseField; EindDatum: TDateTime): IWhereEnd; overload;
     function PointInTime(const BeginField, EindField: TBaseField; BeginDatum: TDateTime; EindDatumField: TBaseField): IWhereEnd; overload;
     {IWhereNext}
+    function Collate       (const aCollateType: TCollateType): IWhereNext;
     function ISValue       (const aValue: Variant): IWhereEnd;
     function ISNotValue    (const aValue: Variant): IWhereEnd;
     function Equal         (const aValue: Variant         ): IWhereEnd; overload;
@@ -1051,6 +1060,16 @@ begin
   DetermineAliasForField(aField);
 end;
 
+procedure TQueryBuilder.Clear;
+begin
+  SelectFields.Clear;
+  SelectFields_Ordered.Clear;
+  JoinParts.Clear;
+  WhereParts.Clear;
+  if (GroupByPart <> nil) then
+    SetLength(GroupByPart.FGroupBySet,0);
+end;
+
 function TQueryBuilder.CloseBracket: IWhereEnd;
 begin
   Result := Self;
@@ -1073,6 +1092,12 @@ begin
   jp := TJoinPart.Create;
   jp.FOperation := joCloseBracket;
   FJoinPartList.Add(jp);
+end;
+
+function TQueryBuilder.Collate(const aCollateType: TCollateType): IWhereNext;
+begin
+   Result := Self;
+   FWhereBuilder.FActiveCollateType := aCollateType;
 end;
 
 function TQueryBuilder.Count(aField: TBaseField): ISelectNext;
@@ -1133,6 +1158,8 @@ end;
 
 constructor TQueryBuilder.Create(const aMainTableField: TBaseField);
 begin
+  Assert(aMainTableField <> nil, 'No main field of table (like ID)');
+  //FDatabase := aMainTableField.DatabaseName;
   FTable    := aMainTableField.TableName;
   FMainTableField := aMainTableField;
 end;
@@ -1357,8 +1384,10 @@ var
   i: Integer;
 begin
   Result := Self;
-
-  gb := TGroupByPart.Create;
+  if Assigned(FGroupByPart) then
+    gb := FGroupByPart
+  else
+    gb := TGroupByPart.Create;
   SetLength(gb.FGroupBySet, Length(aFields));
   for i := 0 to High(aFields) do
     gb.FGroupBySet[i] := aFields[i];
@@ -2343,6 +2372,7 @@ var
 begin
   Result := Self;
   FActiveWhereField := nil;
+  FActiveCollateType := ctGeen;
 
   wp := TWherePart.Create;
   wp.FOperation := woAnd;
@@ -2370,6 +2400,7 @@ begin
 
   wp := TWherePartFieldValue.Create;
   wp.FField        := FActiveWhereField;
+  wp.FCollateType  := FActiveCollateType;
   wp.FCompare      := aType;
   wp.FCompareValue := aValue;
   wp.FFieldSelectType := FActiveWhereOperation;
@@ -2424,6 +2455,7 @@ begin
 
   wp := TWherePartFieldValue.Create;
   wp.FField        := FActiveWhereField;
+  wp.FCollateType  := FActiveCollateType;
   wp.FCompare      := aType;
   wp.FCompareSubQuery := aSubQuery.Details;
   FWhereParts.Add(wp);
@@ -2441,6 +2473,7 @@ begin
 
   wp := TWherePartFieldField.Create;
   wp.FField        := FActiveWhereField;
+  wp.FCollateType  := FActiveCollateType;
   wp.FCompare      := aType;
   wp.FCompareField := aField;
   wp.FFieldSelectType := FActiveWhereOperation;
@@ -2481,6 +2514,7 @@ var
 begin
   Result := Self;
   FActiveWhereField := nil;
+  FActiveCollateType := ctGeen;
 
   wp := TWherePartSubQuery.Create;
   wp.FOperation := woExists;
@@ -2516,6 +2550,7 @@ begin
 
   wp := TWherePartFieldSet.Create;
   wp.FField        := FActiveWhereField;
+  wp.FCollateType  := FActiveCollateType;
   wp.FCompare      := wcInSet;
   SetLength(wp.FCompareSet, Length(aSet));
   for i := 0 to High(aSet) do
@@ -2604,6 +2639,7 @@ var
 begin
   Result := Self;
   FActiveWhereField := nil;
+  FActiveCollateType := ctGeen;
 
   wp := TWherePartSubQuery.Create;
   wp.FOperation := woNotExists;
@@ -2621,6 +2657,7 @@ begin
 
   wp := TWherePartFieldSet.Create;
   wp.FField        := FActiveWhereField;
+  wp.FCollateType  := FActiveCollateType;
   wp.FCompare      := wcNotInSet;
   SetLength(wp.FCompareSet, Length(aSet));
   for i := 0 to High(aSet) do
@@ -2670,6 +2707,7 @@ var
 begin
   Result := Self;
   FActiveWhereField := nil;
+  FActiveCollateType := ctGeen;
 
   wp := TWherePart.Create;
   wp.FOperation := woOr;
@@ -2808,7 +2846,6 @@ begin
       Exit(f);
   end;
 end;
-
 
 { TBaseFieldFields }
 

@@ -32,6 +32,7 @@ uses
 
 type
   TDataRecord = class;
+  TDataRecordClass = class of TDataRecord;
 
   TBaseField = class;
   TBaseFieldClass = class of TBaseField;
@@ -63,7 +64,6 @@ type
   TNonQueryDateField  = class;
   TNonQueryTimeField  = class;
 
-  {$MESSAGE warn 'BO?'}
   ISlotMaster = interface
     ['{BABF675A-108A-47C2-B7C2-0727E89EA6D1}']
     function RegisterListSlot: Integer;
@@ -84,7 +84,10 @@ type
 
   TFieldFilter = function(aField: TBaseField): Boolean of object;
 
+  TFieldValueChangeEvent = procedure(aField: TBaseField; const aOldValue, aNewValue: Variant);
+
   //base list for fields, no data functions (usable for normal field lists)
+  {$METHODINFO ON}  //otherwise compiler warnings with published properties
   TBaseDataRecord = class(TList<TBaseField>)
   protected
     FOwner: TObject;
@@ -133,11 +136,13 @@ type
   TBaseField = class
   private
     type TMultiValidationEvent = class(TMultiCastResult<TBaseField, string>);
+    type TMultiChangeEvent = class(TMultiCast<TBaseField>);
   private
     FPropertyName: string;
     FMetaField: TBaseTableAttribute;
     FOnValidation: TMultiValidationEvent;
     FEditMaskFunction: TFunc<string>;
+    FOnChange: TMultiChangeEvent;
     function GetRequired: Boolean;
     function GetDisplayLabel: String; virtual;
     function GetFieldName: String;
@@ -165,6 +170,10 @@ type
     function GetMinValue: Double;
     procedure SetMaxValue(const Value: Double);
     procedure SetMinValue(const Value: Double);
+    function GetOnChange: TMultiChangeEvent;
+    function GetIsAutoInc: Boolean;
+    function GetVisible: Boolean;
+    procedure SetVisible(const Value: Boolean);
   protected
     FDataRecord: TDataRecord;
     FPosition  : Integer;
@@ -248,6 +257,7 @@ type
     //
     property DisplayLabel : String     read GetDisplayLabel  write SetDisplayLabel;
     property IsRequired   : Boolean    read GetRequired      write SetRequired;
+    property IsAutoInc    : Boolean    read GetIsAutoInc;
     property FieldType    : TFieldType read GetFieldType;
     property MinValue     : Double     read GetMinValue write SetMinValue;
     property MaxValue     : Double     read GetMaxValue write SetMaxValue;
@@ -258,6 +268,8 @@ type
     property EditFormat   : string     read GetEditFormat    write SetEditFormat;
     //generic editmask: http://docwiki.embarcadero.com/Libraries/XE5/en/Vcl.Mask.TCustomMaskEdit.EditMask
     property EditMask: string          read GetEditMask      write SetEditMask;
+    property Visible: Boolean          read GetVisible       write SetVisible;
+    //can depend on other data....
     property EditMaskFunction: TFunc<string> read FEditMaskFunction write FEditMaskFunction;
     //
     function HasDefaultValue: Boolean;
@@ -277,6 +289,11 @@ type
     function IsValid: Boolean;
     property OnValidation: TMultiValidationEvent read GetOnValidation;
     function GetValidationErrorText: string;
+
+    //function HasOnChangeEvents: boolean;
+    property OnChange: TMultiChangeEvent read GetOnChange;
+
+    function ToString: string; override;
   end;
 
   TCustomField = class(TBaseField)
@@ -312,9 +329,13 @@ type
   TDataRecord = class(TBaseDataRecord)
   private
     function GetField(aIndex: Integer): TCustomField;
+    function GetOnChange: TBaseField.TMultiChangeEvent;
   protected
     FOwnData: TRowData;
     FRecordData: PRowData;
+    FUpdateCount: Integer;
+    //FPendingUpdates: Integer;
+    FOnChange: TBaseField.TMultiChangeEvent;
     function  GetRecordData: PRowData;
     procedure CreateFieldsByRTTI;
     procedure LoadSharedData(aSingleRecord: TDataRecord);virtual;  //used to clone/share data with same BO object
@@ -331,6 +352,13 @@ type
 
     procedure AllocFieldValues;
     procedure LoadRecordData(aRowData: PRowData);virtual;  //load data from a list (crud, bo list, etc))
+
+    procedure BeginUpdate;
+    procedure EndUpdate;
+    procedure DoOnChangeEvents;
+
+    //function HasOnChangeEvents: boolean;
+    property OnChange: TBaseField.TMultiChangeEvent read GetOnChange;
 
     procedure Clear2Empty;virtual;
     procedure Clear2Null;virtual;
@@ -626,6 +654,7 @@ type
   TRegisteredCustomFields = class
   private
     class var FList: TList<TBaseFieldClass>;
+    class function List: TList<TBaseFieldClass>;
     class function GetItem(aIndex: Integer): TBaseFieldClass; static;
   public
     class constructor Create;
@@ -651,26 +680,48 @@ type
 
   //------------------------------------
 
-  {$MESSAGE warn 'BO?'}
 //  procedure AppendBOerror(ErrorText: string; var aValidationArray: TValidationErrors; Error_ID: Integer = 0);
   procedure AppendValidationArray(var left: TValidationErrors; const right: TValidationErrors);
   function  AppendValidationError(var aValidationArray: TValidationErrors): PValidationRecord;
 //  function ExecuteCheck(Count: Integer; aValidationArray: TValidationErrors): Boolean;
 //  function ContainsError_ID(aValidationArray: TValidationErrors; Error_ID: Integer): Boolean;
 
-  procedure AddFieldToArray(aField: TBaseField; var aArray: TFieldArray);
+  procedure AddFieldToArray(const aField: TBaseField; var aArray: TFieldArray; const Unique: Boolean = False);
+  procedure AddFieldsToArray(const aFieldArray: array of TBaseField; var aArray: TFieldArray; const Unique: Boolean = False);
 
 implementation
 
 uses RTTI, TypInfo, GlobalRTTI, Variants, System.DateUtils,
      Math, System.StrUtils, UltraStringUtils;
 
-procedure AddFieldToArray(aField: TBaseField; var aArray: TFieldArray);
+procedure AddFieldsToArray(const aFieldArray: array of TBaseField; var aArray: TFieldArray; const Unique: Boolean = False);
+var Field: TBaseField;
+begin
+   for Field in aFieldArray do
+      AddFieldToArray(Field, aArray, Unique);
+end;
+
+procedure AddFieldToArray(const aField: TBaseField; var aArray: TFieldArray; const Unique: Boolean = False);
+
+   function FieldIn: Boolean;
+   var Field2: TBaseField;
+   begin
+      Result := False;
+      for Field2 in aArray do
+      begin
+         if (aField = Field2) then
+            Exit(True);
+      end;
+   end;
+
 var Index: Integer;
 begin
-   Index := Length(aArray);
-   SetLength(aArray, (Index + 1));
-   aArray[Index] := aField;
+  if (not (Unique and FieldIn)) then
+  begin
+    Index := Length(aArray);
+    SetLength(aArray, (Index + 1));
+    aArray[Index] := aField;
+  end;
 end;
 
 function AppendValidationError(var aValidationArray: TValidationErrors): PValidationRecord;
@@ -692,34 +743,6 @@ begin
    end;
 end;
 
-{
-procedure AppendBOerror(ErrorText: string; var aValidationArray: TValidationErrors; Error_ID: Integer = 0);
-begin
-   SetLength(aValidationArray, Length(aValidationArray)+1);
-   with aValidationArray[Length(aValidationArray)-1] do
-   begin
-      Clear;
-      Error := ErrorText;
-      Error_ID := Error_ID;
-   end;
-end;
-
-function ExecuteCheck(Count: Integer; aValidationArray: TValidationErrors): Boolean; inline;
-begin
-   Result := (Count < 0) Or (Length(aValidationArray) < Count);
-end;
-
-function ContainsError_ID(aValidationArray: TValidationErrors; Error_ID: Integer): Boolean;
-var I: Integer;
-begin
-   Result := False;
-   for I := 0 to Length(aValidationArray) -1 do
-   begin
-      if (aValidationArray[I].Error_ID = Error_ID) then
-         Exit(True);
-   end;
-end;
-}
 
 { TBaseDataRecord }
 
@@ -821,12 +844,27 @@ begin
 end;
 
 function TBaseDataRecord.GetFieldForID: TBaseIDField;
-//find PK/indentity field: for UltraWare this is the first field with name "ID"
+//find PK/indentity field
+var
+  i: Integer;
+  f: TBaseField;
 begin
-   Result := TBaseIDField(FieldByName('ID'));
-   //todo: make seperate function for ID retrieval?
-   if (not Assigned(Result)) and (Self.Count > 0) then
-      Result := TBaseIDField(Items[0]);
+  Result := nil;  //default nil: each table needs a PK! otherwise no ID veld which we need for updates
+
+  for i := 0 to Self.Count - 1 do
+  begin
+    f := Items[i];
+    if (f.FieldType = ftFieldID) then
+    begin
+      //default nog niet ingevuld, deze later expliciet testen? dus moet én ID field én PK zijn?
+      //want met deze extra info weten we of het een autoinc ID of handmatige PK field is
+      if (f.MetaField.KeyMetaData is TPKMetaField) then
+        Exit(f as TBaseIDField)
+      //vooralsnog is ftFieldID = ID field is goed genoeg, dit is ook backwards compatible (dit werd al gedaan)
+      else
+        Exit(f as TBaseIDField);
+    end;
+  end;
 end;
 
 function TBaseDataRecord.GetFirstValidationError(aSkipEmptyFields: Boolean; aValidationFilter: TFieldFilter): TValidationRecord;
@@ -1006,6 +1044,11 @@ begin
       FRecordData.FieldValues := AllocFieldValueArray(Self.Count);
 end;
 
+procedure TDataRecord.BeginUpdate;
+begin
+  Inc(FUpdateCount);
+end;
+
 procedure TDataRecord.Clear2Empty;
 var f: TBaseField;
 begin
@@ -1158,7 +1201,14 @@ begin
            f := TBaseFieldClass(p.PropertyType.AsInstance.MetaclassType).Create(tablefieldmeta.FieldMetaData.FieldName, aDestination, ip.Index, tablefieldmeta)
          else
            f := TBaseFieldClass(p.PropertyType.AsInstance.MetaclassType).Create(ip.Name, aDestination, ip.Index, tablefieldmeta); // bijv TTypedIDField
-         aDestination.Insert(ip.Index, f);
+
+         //aDestination.Insert(ip.Index, f);
+         while (aDestination.Count <= ip.Index) do
+            aDestination.Add(nil);
+         Assert(not assigned( aDestination[ip.Index]), 'Duplicate index in datarecord'+IntToStr(ip.Index) +' !!!' );
+         aDestination[ip.Index] := f;
+
+
       end;
    end;
 end;
@@ -1167,6 +1217,38 @@ constructor TDataRecord.CreateWithData(aRowData: PRowData);
 begin
    inherited Create;
    FRecordData := aRowData;
+end;
+
+procedure TDataRecord.DoOnChangeEvents;
+var f: TBaseField;
+begin
+  if FUpdateCount > 0 then
+  begin
+//    Inc(FPendingUpdates);
+    Exit;
+  end;
+
+//  if FPendingUpdates <= 0 then Exit;         must also fire on row change!
+//  FPendingUpdates := 0;
+
+   for f in Self do
+   begin
+     if f.FOnChange <> nil then
+       f.OnChange.DoEvent(f);
+   end;
+
+   if Self.FOnChange <> nil then
+     Self.FOnChange.DoEvent(nil);
+end;
+
+procedure TDataRecord.EndUpdate;
+begin
+  Dec(FUpdateCount);
+  if FUpdateCount < 0 then
+    FUpdateCount := 0;
+
+  if FUpdateCount = 0 then
+    DoOnChangeEvents;
 end;
 
 function TDataRecord.GetTypedField<T>(aIndex: Integer): T;
@@ -1179,6 +1261,13 @@ begin
   Result := Items[aIndex] as TCustomField;
 end;
 
+function TDataRecord.GetOnChange: TBaseField.TMultiChangeEvent;
+begin
+  if FOnChange = nil then
+    FOnChange := TBaseField.TMultiChangeEvent.Create;
+  Result := FOnChange;
+end;
+
 function TDataRecord.GetRecordData: PRowData;
 begin
    Result := FRecordData;
@@ -1188,6 +1277,8 @@ procedure TDataRecord.LoadRecordData(aRowData: PRowData);
 begin
    FRecordData := aRowData;
    FOwnData.FieldValues := nil;
+
+   DoOnChangeEvents;
 end;
 
 procedure TDataRecord.LoadSharedData(aSingleRecord: TDataRecord);
@@ -1200,7 +1291,7 @@ end;
 procedure TDataRecord.Notify(const Item: TBaseField;
   Action: TCollectionNotification);
 begin
-  if (Action = cnAdded) then
+  if (Action = cnAdded) and Assigned(Item) then
   begin
     if Item.DataRecord = nil then
       Item.FDataRecord := Self;
@@ -1292,6 +1383,10 @@ end;
 
 function TBaseField.IsEmpty: Boolean;
 begin
+   Assert(FDataRecord <> nil);
+   if FDataRecord.FRecordData = nil then
+     Exit(True);
+
    Result := InternalGetFieldValueRecord.IsEmpty;
 end;
 
@@ -1402,8 +1497,11 @@ end;
 
 function TBaseField.GetDefaultValue: Variant;
 begin
-   Assert(HasDefaultValue);
-   Result := FMetaField.FieldMetaData.DefaultValue.DefaultValue;
+   //Assert(HasDefaultValue);
+   if HasDefaultValue then
+     Result := FMetaField.FieldMetaData.DefaultValue.DefaultValue
+   else
+     Result := Null;
 end;
 
 function TBaseField.GetDisplayFormat: string;
@@ -1509,6 +1607,13 @@ begin
   Result := FMetaField.FieldMetaData.MinValue;
 end;
 
+function TBaseField.GetOnChange: TMultiChangeEvent;
+begin
+  if FOnChange = nil then
+    FOnChange := TMultiChangeEvent.Create;
+  Result := FOnChange;
+end;
+
 function TBaseField.GetOnValidation: TMultiValidationEvent;
 begin
    if FOnValidation = nil then
@@ -1587,10 +1692,10 @@ var
 begin
    Result := '';
    if IsRequired and
-   // (FieldType <> ftFieldID) and //ID fields are required but cannot be filled by user?
-      IsEmptyOrNull and (not HasDefaultValue) and
-      ( (FieldName <> 'ID') and (FieldName <> TableName + '_ID') ) then //todo: check on PK!
-      Result := _Fmt('"%s" is verplicht en leeg, vul aub een waarde in', [DisplayLabel]);
+      not IsAutoInc and    //autoinc fields are automatic filled in DB so needs/allowed to be empty  
+      IsEmptyOrNull and (not HasDefaultValue) 
+   then
+      Result := _Fmt('"%s" is required and empty, please fill in a value', [DisplayLabel]);
 
    if Result <> '' then Exit;
    if IsEmpty then Exit;
@@ -1668,11 +1773,25 @@ end;
 procedure TBaseField.SetFieldValue(const Value: Variant);
 var
    prec: PFieldData;
+   old: Variant;
 begin
    prec := InternalGetFieldValueRecord;
    if prec.DataType = ftFieldUnknown then // first time?
       prec.DataType := Self.FieldType;
+
+   if (FOnChange <> nil) or (DataRecord.FOnChange <> nil) then
+     old := prec.FieldValue;
+
    prec.FieldValue := Value;
+
+   if ( (FOnChange <> nil) or (DataRecord.FOnChange <> nil) ) and
+      (old <> Value) then
+   begin
+     if (FOnChange <> nil) then
+       OnChange.DoEvent(Self);
+     if (DataRecord.FOnChange <> nil) then
+       DataRecord.OnChange.DoEvent(Self);
+   end;
 end;
 
 procedure TBaseField.SetMaxValue(const Value: Double);
@@ -1707,15 +1826,22 @@ end;
 procedure TBaseField.InternalSetValueAsInteger(const aValue: Integer; ZeroAsNull: Boolean);
 var
    prec: PFieldData;
+   old: Variant;
 begin
    prec := InternalGetFieldValueRecord;
    if prec.DataType = ftFieldUnknown then // first time?
       prec.DataType := Self.FieldType;
 
+   if FOnChange <> nil then
+     old := prec.FieldValue;
+
    if (aValue = 0) and ZeroAsNull then
       prec.Clear2Null
    else
       prec.ValueAsInteger := aValue;
+
+   if (FOnChange <> nil) and (old <> aValue) then
+     OnChange.DoEvent(Self);
 end;
 
 procedure TBaseField.SetMinValue(const Value: Double);
@@ -1749,11 +1875,19 @@ end;
 procedure TBaseField.SetValueAsBoolean(const aValue: Boolean);
 var
    prec: PFieldData;
+   old: Variant;
 begin
    prec := InternalGetFieldValueRecord;
    if prec.DataType = ftFieldUnknown then // first time?
       prec.DataType := Self.FieldType;
+
+   if FOnChange <> nil then
+     old := prec.FieldValue;
+
    prec.ValueAsBoolean := aValue;
+
+   if (FOnChange <> nil) and (old <> aValue) then
+     OnChange.DoEvent(Self);
 end;
 
 procedure TBaseField.SetValueAsCurrency(const aValue: Currency);
@@ -1769,56 +1903,99 @@ end;
 procedure TBaseField.SetValueAsDateTime(const aValue: TDateTime);
 var
    prec: PFieldData;
+   old: Variant;
 begin
    prec := InternalGetFieldValueRecord;
    if prec.DataType = ftFieldUnknown then // first time?
       prec.DataType := Self.FieldType;
+
+   if FOnChange <> nil then
+     old := prec.FieldValue;
+
    prec.ValueAsDateTime := aValue;
+
+   if (FOnChange <> nil) and (old <> aValue) then
+     OnChange.DoEvent(Self);
 end;
 
 procedure TBaseField.SetValueAsDouble(const aValue: Double);
 var
    prec: PFieldData;
+   old: Variant;
 begin
    prec := InternalGetFieldValueRecord;
    if prec.DataType = ftFieldUnknown then // first time?
       prec.DataType := Self.FieldType;
+
+   if FOnChange <> nil then
+     old := prec.FieldValue;
+
    prec.ValueAsDouble := aValue;
+
+   if (FOnChange <> nil) and (old <> aValue) then
+     OnChange.DoEvent(Self);
 end;
 
 procedure TBaseField.SetValueAsInt64(const aValue: Int64);
 var
    prec: PFieldData;
+   old: Variant;
 begin
    prec := InternalGetFieldValueRecord;
    if prec.DataType = ftFieldUnknown then // first time?
       prec.DataType := Self.FieldType;
+
+   if FOnChange <> nil then
+     old := prec.FieldValue;
+
    prec.ValueAsInt64 := aValue;
+
+   if (FOnChange <> nil) and (old <> aValue) then
+     OnChange.DoEvent(Self);
 end;
 
 procedure TBaseField.SetValueAsInteger(const aValue: Integer);
-var
-   prec: PFieldData;
 begin
-   prec := InternalGetFieldValueRecord;
-   if prec.DataType = ftFieldUnknown then // first time?
-      prec.DataType := Self.FieldType;
-   prec.ValueAsInteger := aValue;
+  InternalSetValueAsInteger(aValue, False);
 end;
 
 procedure TBaseField.SetValueAsString(const aValue: String);
 var
    prec: PFieldData;
+   old: Variant;
 begin
    prec := InternalGetFieldValueRecord;
    if prec.DataType = ftFieldUnknown then // first time?
       prec.DataType := Self.FieldType;
+
+   if FOnChange <> nil then
+     old := prec.FieldValue;
+
    prec.ValueAsString := aValue;
+
+   if (FOnChange <> nil) and (old <> aValue) then
+     OnChange.DoEvent(Self);
 end;
 
 procedure TBaseField.SetValueAsVariant(const aValue: Variant);
 begin
    SetFieldValue(aValue);
+end;
+
+procedure TBaseField.SetVisible(const Value: Boolean);
+begin
+  Assert( (FMetaField <> nil) and (FMetaField.FieldMetaData <> nil) );
+  //clone: should not change the global metadata!
+  if MetaField.RefCount > 1 then
+    MetaField := MetaField.Clone;
+  if MetaField.FieldMetaData.RefCount > 1 then
+    MetaField.FieldMetaData := MetaField.FieldMetaData.Clone;
+  MetaField.FieldMetaData.Visible := Value;
+end;
+
+function TBaseField.ToString: string;
+begin
+  Result := Self.ValueAsString;
 end;
 
 procedure TBaseField.UndoChange;
@@ -1921,6 +2098,13 @@ begin
    Result := GetFieldValue;
 end;
 
+function TBaseField.GetIsAutoInc: Boolean;
+begin
+  Result := False;
+  if (MetaField.KeyMetaData is TPKMetaField) then
+    Result := (MetaField.KeyMetaData as TPKMetaField).IsAutoInc;
+end;
+
 function TBaseField.GetIsEmptyString: Boolean;
 begin
    Result := IsEmptyOrNull or (ValueAsString = '')
@@ -1932,6 +2116,12 @@ begin
       Result := ''
    else
       Result := ValueAsString;
+end;
+
+function TBaseField.GetVisible: Boolean;
+begin
+  Assert( (FMetaField <> nil) and (FMetaField.FieldMetaData <> nil) );
+  Result := FMetaField.FieldMetaData.Visible;
 end;
 
 function TBaseField.GetIntValueOrZero: Integer;
@@ -1990,11 +2180,7 @@ begin
 
    // clear list data
    if FMultiRecordData <> nil then
-      for I := 0 to High(FMultiRecordData.RecordListData) do
-      begin
-         FMultiRecordData.RecordListData[I].FDataLoaded := false;
-         FMultiRecordData.RecordListData[I].RowValues := nil;
-      end;
+     FMultiRecordData.ClearData;
 end;
 
 procedure TMultiDataRecord.Clear2Null;
@@ -2038,7 +2224,10 @@ begin
       FOwnMultiRecordData.RowData.FieldValues := nil;
       FOwnMultiRecordData.RecordListData := nil;
    end;
-   LoadRecordData(@aRowData.RowData);
+   if aRowData = nil then
+     LoadRecordData(nil)
+   else
+     LoadRecordData(@aRowData.RowData);
 
    FMultiRecordData := aRowData;
 end;
@@ -2145,7 +2334,7 @@ end;
 
 procedure TCustomIDField<T>.SetTypedID(const aValue: T);
 begin
-   SetValueAsInt64( PBaseIDValue(@aValue).ID );
+   SetTypedIDValue( PBaseIDValue(@aValue).ID );
 end;
 
 { TBaseIDValue }
@@ -2492,12 +2681,12 @@ end;
 
 class function TRegisteredCustomFields.Count: Integer;
 begin
-   Result := FList.Count;
+   Result := List.Count;
 end;
 
 class constructor TRegisteredCustomFields.Create;
 begin
-   FList := TList<TBaseFieldClass>.Create;
+//   FList := TList<TBaseFieldClass>.Create;
 end;
 
 class destructor TRegisteredCustomFields.Destroy;
@@ -2507,13 +2696,20 @@ end;
 
 class function TRegisteredCustomFields.GetItem(aIndex: Integer): TBaseFieldClass;
 begin
-   Result := FList.Items[aIndex];
+   Result := List.Items[aIndex];
+end;
+
+class function TRegisteredCustomFields.List: TList<TBaseFieldClass>;
+begin
+   if (not Assigned(FList)) then
+      FList := TList<TBaseFieldClass>.Create;
+   Result := FList;
 end;
 
 class procedure TRegisteredCustomFields.RegisterCustomField(aFieldClass: TBaseFieldClass);
 begin
-   if not FList.Contains(aFieldClass) then
-      FList.Add(aFieldClass);
+   if not List.Contains(aFieldClass) then
+      List.Add(aFieldClass);
 end;
 
 { TUltraBooleanField }

@@ -35,13 +35,14 @@ uses
   Utils.Validation in '..\Func\Utils.Validation.pas',
   CRUD.TEST in 'CRUDS\CRUD.TEST.pas',
   Meta.TEST in 'CRUDS\Meta.TEST.pas',
-  Meta.CustomIDTypes in 'CRUDS\Meta.CustomIDTypes.pas';
+  Meta.CustomIDTypes in 'CRUDS\Meta.CustomIDTypes.pas',
+  fDBSettings in '..\UltraGenerator\fDBSettings.pas' {DBSettingsFrm};
 
 begin
   Application.Initialize;
 
-  TfrmMain.OutputCRUDPath := ExtractFilePath(Application.ExeName) + '..\CRUDs\';
-  TGenerator.TemplatePath := ExtractFilePath(Application.ExeName) + '..\templates\';
+//  TfrmMain.OutputCRUDPath := ExtractFilePath(Application.ExeName) + '..\CRUDs\';
+  TGeneratorSettings.TemplatePath := ExtractFilePath(Application.ExeName) + '..\templates\';
 
   AddSQLDatabaseSettings('', 'TestDB.sdf',
               '', '', '', True, '',
@@ -53,6 +54,7 @@ begin
 
   Application.MainFormOnTaskbar := True;
   Application.CreateForm(TfrmMain, frmMain);
-  Application.CreateForm(TfrmModelGenerator, frmModelGenerator);
+  Application.CreateForm(TDBSettingsFrm, DBSettingsFrm);
+  //  Application.CreateForm(TfrmModelGenerator, frmModelGenerator);
   Application.Run;
 end.

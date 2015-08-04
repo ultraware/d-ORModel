@@ -68,6 +68,7 @@ type
     procedure QueryFindSetSortString(aDataStore: TBaseFindResults; const aSortString: string);
     function  QueryFindGetBookmark(aDataStore: TBaseFindResults): TBookmark;
     procedure QueryFindSetBookmark(aDataStore: TBaseFindResults; const aBookmark: TBookmark);
+    function  QueryFindCompareBookmark(aDataStore: TBaseFindResults; Bookmark1, Bookmark2: TBookmark): Integer;
     //
     procedure QueryExecute(aQuery: IQueryDetails; aNoErrorIfNoneAffected: boolean = false);
     function  QueryExecuteCount(const aQuery: IQueryDetails): Integer;
@@ -116,6 +117,7 @@ type
     procedure QueryFindSetSortString(aDataStore: TBaseFindResults; const aSortString: string); virtual; abstract;
     function  QueryFindGetBookmark(aDataStore: TBaseFindResults): TBookmark; virtual; abstract;
     procedure QueryFindSetBookmark(aDataStore: TBaseFindResults; const aBookmark: TBookmark); virtual; abstract;
+    function  QueryFindCompareBookmark(aDataStore: TBaseFindResults;Bookmark1, Bookmark2: TBookmark): Integer; virtual; abstract;
     //
     procedure QueryExecute(aQuery: IQueryDetails; aNoErrorIfNoneAffected: boolean = false); virtual; abstract;
     function  QueryExecuteCount(const aQuery: IQueryDetails): Integer; virtual; abstract;
@@ -223,12 +225,15 @@ begin
 
       //value supplied for ID field? then use identity insert
       if (f.FieldType = ftFieldID) then
-        Result.Insert
-          .EnableIdentityInsert;
+      begin
+        if f.IsAutoInc then      //PK can be without autoinc!
+          Result.Insert
+            .EnableIdentityInsert;
+      end;
     end;
+    //get ID value after insert
+    Result.Insert.RetrieveIdentity;
   end;
-  //get ID value after insert
-  Result.Insert.RetrieveIdentity;
 end;
 
 function TBaseDBProvider.GenerateUpdateQuery(const aData: TBaseDataRecord): IQueryBuilder;

@@ -1,38 +1,38 @@
-unit CRUD.TEST;
+unit CRUD.Test;
 
-{ CRUD object for table: CompendaAppDemo.TEST }
+{ CRUD object for table: Test }
 
 interface
 
 {$WEAKLINKRTTI ON}
 
 uses
-  Data.CRUD, DataRecord, Meta.Data,
-  Meta.TEST, Data.CustomTypes, Meta.CustomIDTypes;
+  Data.CRUD, Data.DataRecord, Data.CustomTypes,
+  Meta.Data, Meta.Test, Meta.CustomIDTypes;
 
 type
-  TTEST = class(TDataRecord)
+  TTest = class(TJoinableDataRecord) 
   public
-    [TEST(ID)]                                 property  ID                         : TTypedTEST_IDField         index   0 read GetTypedTEST_IDField;
-    [TEST(Datum)]                              property  Datum                      : TTypedDateTimeField        index   1 read GetDateTimeField;
-    [TEST(Tekst)]                              property  Tekst                      : TTypedStringField          index   2 read GetStringField;
+    [Test(ID)]                                 property  ID                         : TTypedTest_IDField         index   0 read GetTypedTest_IDField;
+    [Test(Datum)]                              property  Datum                      : TTypedDateTimeField        index   1 read GetDateTimeField;
+    [Test(Tekst)]                              property  Tekst                      : TTypedStringField          index   2 read GetStringField;
   end;
 
-  TTESTCRUD = class(TDataCRUD<TTEST>);
+  TTestCRUD = class(TDataCRUD<TTest>);
 
-  function TESTCRUD: TTESTCRUD;
+  function TestCRUD: TTestCRUD;
 
 implementation
 
 threadvar
-  localCRUD: TTESTCRUD;
+  localCRUD: TTestCRUD;
 
-function TESTCRUD: TTESTCRUD;
+function TestCRUD: TTestCRUD;
 begin
   Result := localCRUD;
   if Result = nil then
   begin
-    localCRUD := TTESTCRUD.Create;
+    localCRUD := TTestCRUD.Create;
     Result    := localCRUD;
   end;
 end;

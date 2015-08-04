@@ -50,6 +50,7 @@ type
     procedure QueryFindSetSortString(aDataStore: TBaseFindResults; const aSortString: string); override;
     function  QueryFindGetBookmark(aDataStore: TBaseFindResults): TBookmark; override;
     procedure QueryFindSetBookmark(aDataStore: TBaseFindResults; const aBookmark: TBookmark); override;
+    function  QueryFindCompareBookmark(aDataStore: TBaseFindResults; Bookmark1, Bookmark2: TBookmark): Integer; override;
     //
     procedure QueryExecute(aQuery: IQueryDetails; aNoErrorIfNoneAffected: boolean = false); override;
     function  QueryExecuteCount(const aQuery: IQueryDetails): Integer; override;
@@ -70,7 +71,7 @@ type
 implementation
 
 uses
-  SysUtils,
+  SysUtils, Math,
   DB.ConnectionPool, DB.ADODataConverter, Meta.Data, DB.Base, Variants,
   DB.Connection.SQLServer, DB.Settings.SQLServer, Winapi.Windows;
 
@@ -89,6 +90,8 @@ begin
   try
     if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
 
     insert := GenerateInsertQuery(aData);
 
@@ -122,6 +125,8 @@ begin
   try
     if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
 
     delete := GenerateDeleteQuery(aData);
 
@@ -154,6 +159,8 @@ begin
   try
     if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
 
     update := GenerateUpdateQuery(aData);
 
@@ -176,11 +183,13 @@ var
 begin
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      (connection as TBaseADOConnection).QueryCreateTable(aTableModel, WithPrimaryKey, DropIfExists)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    (connection as TBaseADOConnection).QueryCreateTable(aTableModel, WithPrimaryKey, DropIfExists);
   finally
     TDBConnectionPool.PutConnectionToPool(Self.DBSettings, connection);
   end;
@@ -193,11 +202,13 @@ var
 begin
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      iDummy := (connection as TBaseADOConnection).QueryExecute(aQuery)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    iDummy := (connection as TBaseADOConnection).QueryExecute(aQuery);
 
     if (iDummy = 0) and
        not aNoErrorIfNoneAffected then
@@ -214,11 +225,13 @@ begin
   Result := -1;
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      Result := (connection as TBaseADOConnection).QueryExecute(aQuery)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    Result := (connection as TBaseADOConnection).QueryExecute(aQuery);
   finally
     TDBConnectionPool.PutConnectionToPool(Self.DBSettings, connection);
   end;
@@ -235,11 +248,13 @@ begin
 
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, aMaxRecords)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, aMaxRecords);
   finally
     TDBConnectionPool.PutConnectionToPool(Self.DBSettings, connection);
   end;
@@ -262,11 +277,13 @@ begin
 
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, aMaxRecords)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, aMaxRecords);
   finally
     TDBConnectionPool.PutConnectionToPool(Self.DBSettings, connection);
   end;
@@ -276,6 +293,23 @@ begin
   //data inladen (complete array)
   if adodata <> nil then
     Result := TADODataConverter.FillMultiRowArrayByQuery(adodata, aQuery, aFieldCount);
+end;
+
+function TADODBProvider.QueryFindCompareBookmark(aDataStore: TBaseFindResults; Bookmark1, Bookmark2: TBookmark): Integer;
+var
+  rs: _Recordset;
+  b: OleVariant;
+  ipos1, ipos2: NativeUInt;
+begin
+   rs := (aDataStore as TADOFindResults).FRecordset;//TADOFindResults_Ext(SourceCRUD.FindData as TADOFindResults).FRecordset;
+   b  := rs.Bookmark;
+   rs.Bookmark := PDouble(Bookmark1)^;
+   ipos1 := rs.AbsolutePosition;
+   rs.Bookmark := PDouble(Bookmark2)^;
+   ipos2 := rs.AbsolutePosition;
+   rs.Bookmark := b;
+
+   Result := CompareValue( ipos1, ipos2 );
 end;
 
 function TADODBProvider.QueryFindCount(
@@ -311,11 +345,13 @@ begin
 
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, iDummy)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, iDummy);
     Result := (adodata <> nil) and
               ( (adodata.RecordCount > 0) or   //igv cursorlocation=server dan -1!
                 not adodata.EOF);
@@ -533,11 +569,13 @@ begin
 
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      Result := (connection as TBaseADOConnection).QuerySelectCount(aQuery, iDummy)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    Result := (connection as TBaseADOConnection).QuerySelectCount(aQuery, iDummy);
   finally
     TDBConnectionPool.PutConnectionToPool(Self.DBSettings, connection);
   end;
@@ -554,11 +592,14 @@ begin
 
   connection := TDBConnectionPool.GetConnectionFromPool(Self.DBSettings);
   try
-    //execute
-    if connection is TBaseADOConnection then
-      adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, iDummy, 1)
-    else
+    if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
+
+    //execute
+    adodata := (connection as TBaseADOConnection).QueryExecuteData(aQuery, iDummy, 1);
+
     Result := (adodata <> nil) and
               ( (adodata.RecordCount > 0) or   //igv cursorlocation=server dan -1!
                 not adodata.EOF);
@@ -585,6 +626,8 @@ begin
   try
     if not (connection is TBaseADOConnection) then
       raise EDataException.Create('Unsupported connection type: ' + connection.ClassName);
+    if not connection.IsOpen then
+      connection.Open;
 
     //execute
     errors := (connection as TBaseADOConnection).QueryExecuteValidation(aQuery);

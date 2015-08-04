@@ -1,6 +1,6 @@
-unit Meta.TEST;
+unit Meta.Test;
 
-{ Metadata definition for table: CompendaAppDemo.TEST }
+{ Metadata definition for table: %Database%.Test }
 
 interface
 
@@ -10,27 +10,24 @@ uses
   Meta.Data;
 
 type
-  TTESTField      = class(TBaseTableField);
-  TTESTFieldClass = class of TTESTField;
+  TTestField      = class(TBaseTableField);
+  TTestFieldClass = class of TTestField;
 
-  [TTableMeta('Test', '')]
-  TEST = class(TBaseTableAttribute)
+  [TTableMeta('Test')]
+  Test = class(TBaseTableAttribute)
   public
-    constructor Create(const aField: TTESTFieldClass);
+    constructor Create(const aField: TTestFieldClass);
   end;
 
-  [TTypedMetaField   ('ID', ftFieldID, True{required}, '')]
-  ID                    = class(TTESTField);
-  [TTypedMetaField   ('Datum', ftFieldDateTime, True{required}, '')]
-  Datum                 = class(TTESTField);
-  [TDefaultValueMeta('StandaardTekst')]
-  [TTypedMetaField   ('Tekst', ftFieldString, False, '')]
-  Tekst                 = class(TTESTField);
+  [TPKMetaField(True{autoinc})]
+  [TTypedMetaField   ('ID', ftFieldID, False, '', 0, 2147483647, '', 0, '', '')]                 ID                    = class(TTestField);
+  [TTypedMetaField   ('Datum', ftFieldDateTime, True{required}, '', 0)]                          Datum                 = class(TTestField);
+  [TTypedMetaField   ('Tekst', ftFieldString, False, '', 0, 127, '', 0, '', '')]                 Tekst                 = class(TTestField);
 
 
 implementation
 
-constructor TEST.Create(const aField: TTESTFieldClass);
+constructor Test.Create(const aField: TTestFieldClass);
 begin
   FField := aField;
 end;

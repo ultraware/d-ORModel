@@ -4,7 +4,7 @@ interface
 
 uses
   Classes, Types,
-  TestFramework;
+  TestFramework, Data.DataRecord, Data.CRUD;
 
 type
   TCRUDTester = class(TTestCase)
@@ -32,9 +32,12 @@ type
 
     procedure TestTDataset;
     procedure TestTDatasetPropertyDisplaylabel;
+    procedure TestTDatasetUniquename;
 
     procedure TestCRUDless;
   end;
+
+   TTempCRUD = class(TDataCRUD<TDataRecord>);
 
 implementation
 
@@ -42,25 +45,24 @@ uses
   CRUD.TEST, SysUtils, DateUtils,
   Data.CRUDDataset,
   DB, DBGrids, Forms,
-  Meta.CustomIDTypes, Data.DataRecord, Variants, Data.Query,
-  Meta.Data, ThreadFinalization, Data.CRUD,
-  Meta.TEST, DB.SQLBuilder, DB.Connection, DB.ConnectionPool,
-  DB.Connection.SQLServer, Data.Win.ADODB;
+  Meta.CustomIDTypes, Variants, Data.Query,
+  Meta.Data, ThreadFinalization, Meta.TEST, DB.SQLBuilder, DB.Connection, DB.ConnectionPool,
+  DB.Connection.SQLServer, Data.Base, System.Diagnostics, Vcl.Dialogs,
+  Data.Win.ADODB;
 
 { TCRUDTester }
 
 procedure TCRUDTester.SetUp;
 var
-  oconnection: TBaseConnection;
+  connection: TBaseConnection;
   str: TStringList;
   sql: string;
-  recordset: _Recordset;
 begin
   inherited;
 
   if not FTablesChecked then
   begin
-    oconnection := TDBConnectionPool.GetConnectionFromPool(TESTCRUD.GetProvider.GetDBSettings);
+    connection := TDBConnectionPool.GetConnectionFromPool(TESTCRUD.GetProvider.GetDBSettings);
     str := TStringList.Create;
     try
       if (oconnection as TBaseADOConnection).IsSQLServerCE then
@@ -87,13 +89,13 @@ begin
       if str.IndexOf(UpperCase(TESTCRUD.IDField.TableName)) < 0 then
       begin
         sql := TSQLBuilder.GenerateCreateTableSQL(TESTCRUD.Data, True);
-        (oconnection as TBaseADOConnection).DirectExecute(sql);
+        (connection as TBaseADOConnection).DirectExecute(sql);
       end;
 
       FTablesChecked := True;
     finally
       str.free;
-      TDBConnectionPool.PutConnectionToPool(TESTCRUD.GetProvider.GetDBSettings, oconnection);
+      TDBConnectionPool.PutConnectionToPool(TESTCRUD.GetProvider.GetDBSettings, connection);
     end;
   end;
 end;
@@ -127,7 +129,7 @@ type
 
 procedure TCRUDTester.TestCRUDConstraints;
 var
-  tablefieldmeta{, tablefieldmetaFK}: TBaseTableAttribute;
+  tablefieldmeta {, tablefieldmetaFK}: TBaseTableAttribute;
   errors: TValidationErrors;
 begin
   tablefieldmeta := TBaseField_Ext(TESTCRUD.Data.Tekst).MetaField;
@@ -185,6 +187,9 @@ begin
 //    tablefieldmeta.ConstraintMeta := nil;
 //  end;
 //
+
+
+
 end;
 
 procedure TCRUDTester.TestCRUDless;
@@ -216,6 +221,8 @@ procedure TCRUDTester.TestDefaultValues;
 begin
    TESTCRUD.Data.Clear2EmptyOrDefault;
    TESTCRUD.Data.Tekst.TypedString := 'Tekst';
+   if not TESTCRUD.Data.Datum.HasDefaultValue then
+     Assert(False, 'Testcase voor default values werkt niet meer');
    TESTCRUD.RecordCreate;
    {$MESSAGE HINT 'todo: andere tabel voor default value test gebruiken'}
    {
@@ -294,6 +301,8 @@ begin
 end;
 
 procedure TCRUDTester.TestFindQuery;
+var
+  connection: TBaseConnection;
 begin
   TESTCRUD.NewQuery
     .Select.Fields([TESTCRUD.Data.ID]);
@@ -324,6 +333,19 @@ begin
   repeat
   until not TESTCRUD.QueryFindNext;
   TESTCRUD.QuerySearchSingle;         //loop is finished now, so safe to do an other query
+  Check(True); //ok
+
+  //test offline
+  TESTCRUD.QueryFindFirst;
+  connection := TDBConnectionPool.GetConnectionFromPool(TESTCRUD.GetProvider.GetDBSettings);
+  try
+    connection.Close;
+    repeat
+      Check(TESTCRUD.QueryFindCount > 1, 'Should have more than 1 record in TEST table');
+    until not TESTCRUD.QueryFindNext;
+  finally
+    TDBConnectionPool.PutConnectionToPool(TESTCRUD.GetProvider.GetDBSettings, connection);
+  end;
   Check(True); //ok
 end;
 
@@ -491,6 +513,7 @@ begin
     Check(TESTCRUD.Data.Tekst.IsModified);
     TESTCRUD.RecordUpdate;
     //check saved in db
+    ds.Close;
     i := TESTCRUD.Data.ID.TypedIDValue;
     TESTCRUD.RecordRetrieve(i);
     CheckEqualsString(TESTCRUD.Data.Tekst.TypedString, stekst);
@@ -516,9 +539,10 @@ begin
       ds.First;
 
       //show all rows, otherwise we cannot check on valid .RowCount! @#$%!&@#$@$!
-      dbgrd.Height := TCustomGrid_Hack(dbgrd).DefaultRowHeight *
+      dbgrd.Height := (TCustomGrid_Hack(dbgrd).DefaultRowHeight + 2) *
                       TESTCRUD.QueryFindCount +
                       50;
+      f.Height := dbgrd.Height + 20;   //anders klopt de count niet...
       //does not work:
 //      TCustomGrid_Hack(dbgrd).TopRow := TESTCRUD.QueryFindCount;
 //      TCustomGrid_Hack(dbgrd).LayoutChanged;
@@ -527,7 +551,7 @@ begin
       Application.ProcessMessages;
 
       ds.Last;
-      CheckEquals( TESTCRUD.QueryFindCount, TCustomGrid_Hack(dbgrd).RowCount);
+      CheckEquals( TESTCRUD.QueryFindCount, TCustomGrid_Hack(dbgrd).RowCount - TCustomGrid_Hack(dbgrd).FixedRows);
       //CheckEqualsString(TESTCRUD.Data.Tekst.TypedString,
       //                  TCustomGrid_Hack(dbgrd).GetFieldValue(ds.FieldByName('Tekst').Index) );
     finally
@@ -566,6 +590,47 @@ begin
     end;
   finally
     test2.Free;
+  end;
+end;
+
+procedure TCRUDTester.TestTDatasetUniquename;
+var
+  temp: TTempCRUD;
+  t1, t2: TTESTCRUD;
+  ds: TCustomCRUDDataset<TTempCRUD>;
+begin
+  temp := TTempCRUD.Create;
+  t1   := TTESTCRUD.Create;
+  t2   := TTESTCRUD.Create;
+  try
+    t1.Data.Tekst.DisplayLabel := 'test1';
+    t2.Data.Tekst.DisplayLabel := 'test2';
+
+    temp.Data.Add(t1.Data.ID);
+    temp.Data.Add(t1.Data.Tekst);
+    temp.Data.Add(t2.Data.Tekst);
+
+    temp.NewQuery
+      //.Select.Fields([t1.Data.Tekst, t2.Data.Tekst])
+      .Select.AllFieldsOf(temp.Data)
+      .InnerJoin.OnFields(t2.Data.ID, t1.Data.ID);
+    temp.QueryFindFirst;
+
+    ds := TCustomCRUDDataset<TTempCRUD>.Create(temp);
+    try
+      ds.Open;
+
+//      ds.FieldByName()
+//      ds.FieldByCRUDField()
+//      compare displaylabel, must be different fields
+    finally
+      ds.Free;
+    end;
+
+  finally
+    temp.Free;
+    t1.Free;
+    t2.Free;
   end;
 end;
 

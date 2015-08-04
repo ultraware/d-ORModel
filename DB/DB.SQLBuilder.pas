@@ -30,19 +30,21 @@ type
   TSQLBuilder = class
   private
     class function GetDatabasePrefix(const aField: TBaseField; const aDefaultDatabase: string; dbConType: TDBConnectionType = dbtSQLServer): string;
+      class function RemoveExtraEnters(const aSQL: string): string;
+      class function IndentSQL(const aSQL: string): string;
   protected
     class function GetTableHints(aTableHints: TTableHints): string;
     class function GetDatabaseName(const aField: TBaseField): string; overload;
     class function GetDatabaseName(const aDBNameType: string): string; overload;
 
-    class function GetHavingByPart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const AliasFields: Boolean = True): string;
-    class function GetWherePart  (const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const AliasFields: Boolean = True): string; overload;
-    class function GetWherePart  (const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; wheres: TWherePartList; const AliasFields: Boolean = True): string; overload;
-    class function GetJoinPart   (const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray): string;
+    class function GetHavingByPart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const dbConType: TDBConnectionType = dbtSQLServer; const AliasFields: Boolean = True): string;
+    class function GetWherePart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const dbConType: TDBConnectionType = dbtSQLServer; const AliasFields: Boolean = True): string; overload;
+    class function GetWherePart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; wheres: TWherePartList; const dbConType: TDBConnectionType = dbtSQLServer; const AliasFields: Boolean = True): string; overload;
+    class function GetJoinPart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray): string;
     class function GetOrderByPart(const aQuery: IQueryDetails): string;
     class function GetGroupByPart(const aQuery: IQueryDetails): string;
 
-    class function GetPreValidationCheck(const aQuery: IQueryDetails; aField: TBaseField; aStopOnError: boolean = True): string;
+      class function GetPreValidationCheck(const aQuery: IQueryDetails; aField: TBaseField; aStopOnError: Boolean = True): string;
 
     class function GenerateSelect(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; aMaxRecords: Integer = -1): string;
     class function GenerateInsert(const aDefaultDB: string; const aQuery: IQueryDetails; out aParams: TVariantArray; dbConType: TDBConnectionType = dbtSQLServer): string;
@@ -60,7 +62,6 @@ implementation
 uses
   Variants, SysUtils, strUtils, math, Meta.Data, DB.Connector, TypInfo, Data.CRUD, Data.CustomSQLFields,
   UltraStringUtils;
-
 
 { TSQLBuilder }
 
@@ -89,8 +90,8 @@ begin
    if DropTableIfExists then
    begin
       // Try to drop table as temptable or as table
-      Result := 'IF OBJECT_ID(''Tempdb..'+stable+''', ''U'') IS NOT NULL OR IF OBJECT_ID('''+stable+''', ''U'') IS NOT NULL'+#13#10+
-                'DROP TABLE '+stable;
+      Result := 'IF OBJECT_ID(''Tempdb..' + stable + ''', ''U'') IS NOT NULL OR IF OBJECT_ID(''' + stable + ''', ''U'') IS NOT NULL' + #13#10 +
+         'DROP TABLE ' + stable;
    end;
    Result := 'CREATE TABLE ' + stable + ' ('#13#10;
    i := 1;
@@ -112,7 +113,8 @@ begin
                   StringSize := 127
                else
                   StringSize := Round(f.MaxValue);
-               StringSize := Min(StringSize, 1);
+               if StringSize <= 0 then
+                  StringSize := 127;
 
                Result := Result + Format(' nvarchar(%d)', [StringSize]);
             end;
@@ -180,7 +182,7 @@ var
   Database: string;
 begin
    Database := GetDatabaseName(aQuery.MainTableField);
-   stable := GetDatabasePrefix(aQuery.MainTableField, aDefaultDB, dbConType)+aQuery.Table;
+   stable := GetDatabasePrefix(aQuery.MainTableField, aDefaultDB, dbConType) + aQuery.Table;
 
    case dbConType of
       dbtSQLServerCE:
@@ -198,44 +200,49 @@ begin
       Assert(False)
    end;
 
-   swhere := GetWherePart(aDefaultDB, aQuery, aParams, (dbConType <> dbtSQLServerCE)); // geen alias voor CE
+   swhere := GetWherePart(aDefaultDB, aQuery, aParams, dbConType, (dbConType <> dbtSQLServerCE)); // geen alias voor CE
    if (swhere <> '') then
       Result := Result + #13#10 + 'Where ' + swhere;
 end;
 
-class function TSQLBuilder.GenerateInsert(const aDefaultDB: string; const aQuery: IQueryDetails; out aParams: TVariantArray; dbConType: TDBConnectionType = dbtSQLServer): string;
+class function TSQLBuilder.GenerateInsert(const aDefaultDB: string; const aQuery: IQueryDetails; out aParams: TVariantArray;
+   dbConType: TDBConnectionType = dbtSQLServer): string;
+
+   procedure NextField(const aField, aValue: string; var afieldpart, avaluespart, avalues, afields: string);
+   begin
+      AddToCSVList(aField, afields);
+      afieldpart := afieldpart + ', ' + aField;
+      if (Length(afieldpart) > 100) then
+      begin
+         afields := afields + #13#10#9;
+         afieldpart := '';
+      end;
+
+      AddToCSVList(aValue, avalues);
+      avaluespart := avaluespart + ', ' + aValue;
+      if (Length(avaluespart) > 100) then
+      begin
+         avalues := avalues + #13#10#9;
+         avaluespart := '';
+      end;
+   end;
+
 var
    f: TBaseField;
    sprevalidcheck, stable, sfields, svalues, sjoin, swhere, sgroupby, sHavingBy: string;
-   sfield, svalue, sfieldpart, svaluespart: string;
+   svalue, sfieldpart, svaluespart: string;
    v: Variant;
-
-   procedure NextField;
-   begin
-      AddToCSVList(sfield, sfields);
-      sfieldpart := sfieldpart + ', ' + sfield;
-      if Length(sfieldpart) > 100 then
-      begin
-         sfields := sfields + #13#10#9;
-         sfieldpart := '';
-      end;
-
-      AddToCSVList(svalue, svalues);
-      svaluespart := svaluespart + ', ' + svalue;
-      if Length(svaluespart) > 100 then
-      begin
-         svalues := svalues + #13#10#9;
-         svaluespart := '';
-      end;
-   end;
 begin
+   Result := '';
+   sfieldpart := '';
+   svaluespart := '';
    stable := GetDatabasePrefix(aQuery.MainTableField, aDefaultDB, dbConType) + aQuery.Table;
+   if aQuery.ActivateIdentityInsert then
+      Result := 'SET IDENTITY_INSERT ' + stable + ' ON;'#13#10;
 
    // fields
    for f in aQuery.InsertFieldValues.Keys do
    begin
-      sfield := f.FieldName;
-
       v := aQuery.InsertFieldValues.Items[f];
       if VarIsNull(v) then
          svalue :=  'null'
@@ -245,33 +252,27 @@ begin
          SetLength(aParams, Length(aParams) + 1);
          aParams[High(aParams)] := v;
       end;
-      NextField;
+      NextField(f.FieldName, svalue, sfieldpart, svaluespart, svalues, sfields);
       sprevalidcheck := sprevalidcheck + GetPreValidationCheck(aQuery, f);
    end;
 
    for f in aQuery.InsertFieldFields.Keys do
-   begin
-      sfield := f.FieldName;
-      svalue := GetFieldSQLWithAlias(aQuery, aQuery.InsertFieldFields.Items[f]);
-      NextField;
-   end;
-
-   Result := '';
-   if aQuery.ActivateIdentityInsert then
-      Result := 'SET IDENTITY_INSERT ' + stable + ' ON;'#13#10;
+      NextField(f.FieldName, GetFieldSQLWithAlias(aQuery, aQuery.InsertFieldFields.Items[f]), sfieldpart, svaluespart, svalues, sfields);
+   // geen prevalidcheck, gegevens komen direct uit DB
+   // sprevalidcheck := sprevalidcheck + GetPreValidationCheck(aQuery, f);
 
    if Assigned(aQuery.InsertFromRecord) then
    begin
       sjoin := GetJoinPart(aDefaultDB, aQuery, aParams);
-      swhere := GetWherePart(aDefaultDB, aQuery, aParams);
+      swhere := GetWherePart(aDefaultDB, aQuery, aParams, dbConType);
       if (swhere <> '') then
          swhere := 'Where ' + swhere;
 
-      sGroupBy := GetGroupByPart(aQuery);
-      if sGroupBy <> '' then
-         sGroupBy := 'Group by ' + sGroupBy;
+      sgroupby := GetGroupByPart(aQuery);
+      if sgroupby <> '' then
+         sgroupby := 'Group by ' + sgroupby;
 
-      sHavingBy := GetHavingByPart(aDefaultDB, aQuery, aParams);
+      sHavingBy := GetHavingByPart(aDefaultDB, aQuery, aParams, dbConType);
       if sHavingBy <> '' then
          sHavingBy := 'Having ' + sHavingBy;
 
@@ -304,6 +305,8 @@ begin
 end;
 
 class function TSQLBuilder.GenerateSelect(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; aMaxRecords: Integer = -1): string;
+const
+   NewLineStr = #13#10 + '      ';
 var
    sql, stable, sfield, sfields, sfieldpart, sjoin, swhere, sOrderBy, sGroupBy, sHavingBy: string;
    subquery: IQueryDetails;
@@ -401,10 +404,14 @@ begin
       sfieldpart := sfieldpart + ', ' + sfield;
       if Length(sfieldpart) > 100 then
       begin
-         sfields := sfields + #13#10#9;
+         sfields := sfields + NewLineStr;
          sfieldpart := '';
       end;
    end;
+
+   // laatste nieuwe regel eraf halen als er niets op volgende regel is
+   if SameText(RightStr(sfields, Length(NewLineStr)), NewLineStr) then
+      sfields := Copy(sfields, 1, Length(sfields) - Length(NewLineStr));
 
    // single field from subquerie
    if (aQuery.SelectFieldsSubqueries <> nil) then
@@ -413,8 +420,7 @@ begin
       begin
          Assert(subquery.SelectFields_Ordered.Count = 1, 'subquery mag maar 1 veld bevatten');
          subquery.SetParentQuery(aQuery);
-         sfield := #13#10'(' + GenerateSelect(aDefaultDB, subquery, aParams) +
-                ') as ' + subquery.SelectFields_Ordered.First.FieldName;
+         sfield := #13#10'(' + IndentSQL(GenerateSelect(aDefaultDB, subquery, aParams)) + ') as ' + subquery.SelectFields_Ordered.First.FieldName;
          aQuery.SelectFields.Add(subquery.SelectFields_Ordered.First, soSelect);
          aQuery.SelectFields_Ordered.Add(subquery.SelectFields_Ordered.First);
          subquery.SetParentQuery(nil); // reset, otherwise mem leak due to circular pointers!
@@ -469,27 +475,29 @@ begin
 
 end;
 
-class function TSQLBuilder.GenerateSQL(const aDefaultDB: string; const aQuery: IQueryDetails; out aParams: TVariantArray; aMaxRecords: Integer = -1; dbConType: TDBConnectionType = dbtSQLServer): string;
+class function TSQLBuilder.GenerateSQL(const aDefaultDB: string; const aQuery: IQueryDetails; out aParams: TVariantArray; aMaxRecords: Integer = -1;
+   dbConType: TDBConnectionType = dbtSQLServer): string;
 begin
    aParams := nil;
 
-   if aQuery.QueryType = qtSelect then
-      Result := GenerateSelect(aDefaultDB, aQuery, aParams, aMaxRecords)
-   else if aQuery.QueryType = qtInsert then
-      Result := GenerateInsert(aDefaultDB, aQuery, aParams, dbConType)
-   else if aQuery.QueryType = qtUpdate then
-      Result := GenerateUpdate(aDefaultDB, aQuery, aParams, dbConType)
-   else if aQuery.QueryType = qtDelete then
-      Result := GenerateDelete(aDefaultDB, aQuery, aParams, dbConType)
+   case aQuery.QueryType of
+      qtSelect:
+         Result := GenerateSelect(aDefaultDB, aQuery, aParams, aMaxRecords);
+      qtUpdate:
+         Result := GenerateUpdate(aDefaultDB, aQuery, aParams, dbConType);
+      qtInsert:
+         Result := GenerateInsert(aDefaultDB, aQuery, aParams, dbConType);
+      qtDelete:
+         Result := GenerateDelete(aDefaultDB, aQuery, aParams, dbConType);
    else
       Assert(False);
+   end;
 
-   // remove double enters
-   while ContainsText(Result, #13#10#13#10) do
-      Result := StringReplace(Result, #13#10#13#10, #13#10, [rfReplaceAll]);
+   Result := RemoveExtraEnters(Result);
 end;
 
-class function TSQLBuilder.GenerateUpdate(const aDefaultDB: string; const aQuery: IQueryDetails; out aParams: TVariantArray; dbConType: TDBConnectionType = dbtSQLServer): string;
+class function TSQLBuilder.GenerateUpdate(const aDefaultDB: string; const aQuery: IQueryDetails; out aParams: TVariantArray;
+   dbConType: TDBConnectionType = dbtSQLServer): string;
 var
    f: TBaseField;
    sprevalidcheck, stable, sfields, swhere, sjoin: string;
@@ -523,7 +531,7 @@ begin
          v := aQuery.UpdateIncFieldValues.Items[f];
          if not VarIsNull(v) then
          begin
-            AddToCSVList(f.FieldName + ' = ' + f.FieldName + ' + ?' , sfields); // field1 = field1 + 1
+            AddToCSVList(f.FieldName + ' = ' + f.FieldName + ' + ?', sfields); // field1 = field1 + 1
 
             SetLength(aParams, Length(aParams) + 1);
             aParams[High(aParams)] := aQuery.UpdateIncFieldValues.Items[f];
@@ -536,7 +544,7 @@ begin
    if aQuery.UpdateFieldFields <> nil then
       for f in aQuery.UpdateFieldFields.Keys do
       begin
-         AddToCSVList(f.FieldName + ' = '+ GetFieldSQLWithAlias(aQuery, aQuery.UpdateFieldFields.Items[f]), sfields);
+         AddToCSVList(f.FieldName + ' = ' + GetFieldSQLWithAlias(aQuery, aQuery.UpdateFieldFields.Items[f]), sfields);
 
          sprevalidcheck := sprevalidcheck + GetPreValidationCheck(aQuery, f);
       end;
@@ -544,7 +552,7 @@ begin
    if aQuery.UpdateIncFieldFields <> nil then
       for f in aQuery.UpdateIncFieldFields.Keys do
       begin
-         AddToCSVList(f.FieldName + ' = ' + f.FieldName + ' + '+GetFieldSQLWithAlias(aQuery, aQuery.UpdateFieldFields.Items[f]), sfields); // field1 = field1 + field2
+         AddToCSVList(f.FieldName + ' = ' + f.FieldName + ' + ' + GetFieldSQLWithAlias(aQuery, aQuery.UpdateFieldFields.Items[f]), sfields);
 
          sprevalidcheck := sprevalidcheck + GetPreValidationCheck(aQuery, f);
       end;
@@ -567,7 +575,7 @@ begin
       Assert(False, 'Uknown db connection type for update command');
    end;
 
-   swhere := GetWherePart(aDefaultDB, aQuery, aParams, (dbConType <> dbtSQLServerCE)); // Geen alias voor CE
+   swhere := GetWherePart(aDefaultDB, aQuery, aParams, dbConType, (dbConType <> dbtSQLServerCE)); // Geen alias voor CE
    if swhere <> '' then
       Result := Result + #13#10 + 'Where ' + swhere;
 
@@ -624,19 +632,19 @@ begin
 
       case jp.FOperation of
          joInnerJoin:
-            sjoin := sjoin + #13#10#9 + 'Inner Join ';
+            sjoin := sjoin + IfThen(sjoin <> '', ')') + #13#10 + '     inner join ';
          joLeftJoin:
-            sjoin := sjoin + #13#10#9 + 'Left Join ';
+            sjoin := sjoin + IfThen(sjoin <> '', ')') + #13#10 + '     left join ';
          joRightJoin:
-            sjoin := sjoin + #13#10#9 + 'Right Join ';
+            sjoin := sjoin + IfThen(sjoin <> '', ')') + #13#10 + '     right join ';
          joAnd:
             sjoin := sjoin + ' And ';
          joOr:
             sjoin := sjoin + ' Or ';
          joOpenBracket:
-            sjoin := sjoin + ' (';
+            sjoin := sjoin + '(';
          joCloseBracket:
-            sjoin := sjoin + ') ';
+            sjoin := sjoin + ')';
          joField:
             begin
                if jp is TJoinPartField then
@@ -645,10 +653,10 @@ begin
                      if bnewjoin then
                      begin
                         if issubquery then
-                           sjoin := sjoin + GetTableHints(FTableHints) + ' on '
+                           sjoin := sjoin + GetTableHints(FTableHints) + ' on ('
                         else
                            sjoin := sjoin + GetDatabasePrefix(FJoinField, aDefaultDB) + FJoinField.TableName + ' ' + aQuery.GetAliasForField(FJoinField) +
-                              GetTableHints(FTableHints) + ' on ';
+                              GetTableHints(FTableHints) + ' on (';
                         bnewjoin := False;
                         issubquery := False; // reset temp flag
                      end;
@@ -770,7 +778,7 @@ begin
                   begin
                      FSubQuery.SetParentQuery(aQuery);
 
-                     sjoin := sjoin + #13#10#9'(' + GenerateSelect(aDefaultDB, FSubQuery, aParams) + ') as ' +
+                     sjoin := sjoin + '(' + IndentSQL(GenerateSelect(aDefaultDB, FSubQuery, aParams)) + ') as ' +
                         aQuery.GetAliasForField(FSubQuery.SelectFields_Ordered.First);
                      issubquery := True; // set temp flag for next "on" join fields processing
 
@@ -785,11 +793,14 @@ begin
       end;
    end;
 
-   Result := Copy(sjoin, 3, Length(sjoin)); // 1e #13#10 remove
+   Result := Copy(sjoin, 3, Length(sjoin)); // 1e #13#10 erafhalen
+   if (Trim(Result) <> '') then
+      Result := Result+')';
 end;
 
 class function TSQLBuilder.GetOrderByPart(const aQuery: IQueryDetails): string;
-var OrderBys: TOrderByPartList;
+var
+   OrderBys: TOrderByPartList;
     o: TOrderByPart;
     sOrderBy: string;
 begin
@@ -814,7 +825,7 @@ begin
    Result := sOrderBy;
 end;
 
-class function TSQLBuilder.GetPreValidationCheck(const aQuery: IQueryDetails; aField: TBaseField; aStopOnError: boolean): string;
+class function TSQLBuilder.GetPreValidationCheck(const aQuery: IQueryDetails; aField: TBaseField; aStopOnError: Boolean): string;
 var
    constraint: TFieldConstraintMeta;
    FKField, FKField2: TBaseTableAttribute;
@@ -862,8 +873,7 @@ begin
            if f2.IsEmpty then
            begin
              if aQuery.MainTableField.IsEmptyOrNull then
-               Result := 'select 1 from' +
-                         GetDatabaseName(aQuery.MainTableField) + '..' + aQuery.Table +
+                  Result := 'select 1 from' + GetDatabaseName(aQuery.MainTableField) + '..' + aQuery.Table +
                          ' where (' + f2.FieldName + ' in (' + svalues + '))'
              else
                Result := 'select 1 from ' +
@@ -959,7 +969,8 @@ begin
 end;
 
 class function TSQLBuilder.GetDatabasePrefix(const aField: TBaseField; const aDefaultDatabase: string; dbConType: TDBConnectionType = dbtSQLServer): string;
-var Database: string;
+var
+   Database: string;
 begin
    Result := '';
    Database := GetDatabaseName(aField);
@@ -968,10 +979,12 @@ begin
 end;
 
 class function TSQLBuilder.GetFieldSQLWithAlias(const aQuery: IQueryDetails; const aField: TBaseField; const WithAlias: Boolean): string;
-var SubQueryAlias: string;
+var
+   SubQueryAlias: string;
 
-   function IsFromSubQuery:Boolean;
-   var jp: TJoinPart;
+   function IsFromSubQuery: Boolean;
+   var
+      jp: TJoinPart;
    begin
       Result := False;
       for jp in aQuery.JoinParts do
@@ -982,7 +995,7 @@ var SubQueryAlias: string;
             begin
                if FSubQuery.SelectFields.ContainsKey(aField) then
                begin
-                  SubQueryAlias := aQuery.GetAliasForField(FSubQuery.SelectFields_Ordered.First)+'.';
+                  SubQueryAlias := aQuery.GetAliasForField(FSubQuery.SelectFields_Ordered.First) + '.';
                   Exit(True);
                end;
             end;
@@ -1003,36 +1016,37 @@ begin
 end;
 
 class function TSQLBuilder.GetGroupByPart(const aQuery: IQueryDetails): string;
-var GroupBys: TGroupByPart;
+var
+   GroupBys: TGroupByPart;
     b: TBaseField;
-    sGroupBy: string;
+   sgroupby: string;
 begin
-   sGroupBy := '';
+   sgroupby := '';
    GroupBys := aQuery.GroupByPart;
    if Assigned(GroupBys) then
    begin
       for b in GroupBys.FGroupBySet do
       begin
-         if sGroupBy <> '' then
-            sGroupBy := sGroupBy + ', ';
+         if sgroupby <> '' then
+            sgroupby := sgroupby + ', ';
 
-         sGroupBy := sGroupBy + GetFieldSQLWithAlias(aQuery, b);
+         sgroupby := sgroupby + GetFieldSQLWithAlias(aQuery, b);
       end;
    end;
-   Result := sGroupBy;
+   Result := sgroupby;
 end;
 
-class function TSQLBuilder.GetHavingByPart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const AliasFields: Boolean = True): string;
+class function TSQLBuilder.GetHavingByPart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const dbConType: TDBConnectionType = dbtSQLServer; const AliasFields: Boolean = True): string;
 begin
-   Result := GetWherePart(aDefaultDB, aQuery, aParams, aQuery.HavingParts, AliasFields);
+   Result := GetWherePart(aDefaultDB, aQuery, aParams, aQuery.HavingParts, dbConType, AliasFields);
 end;
 
-class function TSQLBuilder.GetWherePart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const AliasFields: Boolean = True): string;
+class function TSQLBuilder.GetWherePart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; const dbConType: TDBConnectionType = dbtSQLServer; const AliasFields: Boolean = True): string;
 begin
-   Result := GetWherePart(aDefaultDB, aQuery, aParams, aQuery.WhereParts, AliasFields);
+   Result := GetWherePart(aDefaultDB, aQuery, aParams, aQuery.WhereParts, dbConType, AliasFields);
 end;
 
-class function TSQLBuilder.GetWherePart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; wheres: TWherePartList; const AliasFields: Boolean = True): string;
+class function TSQLBuilder.GetWherePart(const aDefaultDB: string; const aQuery: IQueryDetails; var aParams: TVariantArray; wheres: TWherePartList; const dbConType: TDBConnectionType = dbtSQLServer; const AliasFields: Boolean = True): string;
    
    function GetWhereFieldSQL(FField: TBaseField; WhereType: TSelectOperation): string;
    begin
@@ -1053,6 +1067,22 @@ class function TSQLBuilder.GetWherePart(const aDefaultDB: string; const aQuery: 
       end;
    end;
 
+   procedure AddCollate(var aWhere: string; const aCollateType: TCollateType);
+   var CollateStr: string;
+   begin
+      CollateStr := '';
+      case aCollateType  of
+         ctGeen: ;
+         ctDataBaseDefault:               CollateStr := 'Database_Default';
+         ctLatin1_General_CI_AI:          CollateStr := 'Latin1_General_CI_AI'; // André = Andre
+         ctSQL_Latin1_General_CP1_CS_AS:  CollateStr := 'SQL_Latin1_General_CP1_CS_AS'; // Case sensitive
+      else
+         Assert(False)
+      end;
+      if (CollateStr <> '') then
+         aWhere := aWhere + ' Collate ' + CollateStr;
+   end;
+
 var
    w: TWherePart;
    swhere: string;
@@ -1065,13 +1095,13 @@ begin
       case w.FOperation of
          woAnd:
             begin
-               if swhere <> '' then // do not start with and (in case of where object parameter, it starts with dummy and/or)
-                  swhere := swhere + #13#10#9 + 'And ';
+               if (swhere <> '') then // do not start with and (in case of where object parameter, it starts with dummy and/or)
+                  swhere := swhere + #13#10 + 'And ';
             end;
          woOr:
             begin
-               if swhere <> '' then
-                  swhere := swhere + #13#10#9 + 'Or ';
+               if (swhere <> '') then
+                  swhere := swhere + #13#10 + 'Or ';
             end;
          woOpenBracket:
             swhere := swhere + ' (';
@@ -1082,12 +1112,23 @@ begin
                if w is TWherePartFieldValue then
                begin
                   with w as TWherePartFieldValue do
-                  if FCompare = wcEqualOrNull then
+                     if (FCompare = wcEqualOrNull) then
                   begin
                      Assert(FCompareSubQuery = nil);
-                     swhere := swhere + '(' + GetFieldSQLWithAlias(aQuery, FField, AliasFields) +
-                               ' = ? or ' + GetFieldSQLWithAlias(aQuery, FField, AliasFields) +
-                               ' is null) ';
+                        case dbConType of
+                           dbtSQLServer:
+                           begin
+                              swhere := swhere + 'isnull('+ GetFieldSQLWithAlias(aQuery, FField, AliasFields) +',?) = ?';
+                              AddCollate(swhere, FCollateType);
+                              SetLength(aParams, Length(aParams) + 1);
+                              aParams[High(aParams)] := (w as TWherePartFieldValue).CompareValue;
+                           end;
+                           dbtSQLServerCE, dbtSQLLite, dbtMYSQL:
+                           begin
+                              swhere := swhere + '(' + GetFieldSQLWithAlias(aQuery, FField, AliasFields) + ' = ? or ' +
+                                 GetFieldSQLWithAlias(aQuery, FField, AliasFields) + ' is null) ';
+                           end;
+                        end;
                      SetLength(aParams, Length(aParams) + 1);
                      aParams[High(aParams)] := (w as TWherePartFieldValue).CompareValue;
                   end
@@ -1095,7 +1136,7 @@ begin
                   begin
                      // field
                      swhere := swhere + GetWhereFieldSQL(FField, FFieldSelectType);
-
+                        AddCollate(swhere, FCollateType);
                      // operator
                      case FCompare of
                         wcEqual:
@@ -1128,16 +1169,7 @@ begin
 
                      // param
                      case FCompare of
-                       wcEqual,
-                       wcNotEqual,
-                       wcGreater,
-                       wcGreaterEqual,
-                       wcLess,
-                       wcLessEqual,
-                       wcIs,
-                       wcIsNot,
-                       wcInQuerySet,
-                       wcNotInQuerySet:
+                           wcEqual, wcNotEqual, wcGreater, wcGreaterEqual, wcLess, wcLessEqual, wcIs, wcIsNot, wcInQuerySet, wcNotInQuerySet:
                            begin
                               if (FCompare in [wcIs, wcIsNot]) then
                                  Assert(FCompareSubQuery = nil, '"IS" is not supported with subqueries');
@@ -1158,7 +1190,7 @@ begin
                                  begin
                                     Assert(FCompareSubQuery.SelectFields_Ordered.Count = 1, 'subquery mag maar 1 veld bevatten');
                                     FCompareSubQuery.SetParentQuery(aQuery);
-                                    swhere := swhere + #13#10'(' + GenerateSelect(aDefaultDB, FCompareSubQuery, aParams) + ') ';
+                                       swhere := swhere + ' (' + IndentSQL(GenerateSelect(aDefaultDB, FCompareSubQuery, aParams)) + ') ';
                                     FCompareSubQuery.SetParentQuery(nil); // reset, otherwise mem leak due to circular pointers!
                                  end;
                               end;
@@ -1179,7 +1211,7 @@ begin
                   begin
                      // field
                      swhere := swhere + GetWhereFieldSQL(FField, FFieldSelectType);
-
+                     AddCollate(swhere, FCollateType);
                      // operator
                      case FCompare of
                         wcInSet:
@@ -1208,7 +1240,7 @@ begin
                   begin
                      // field
                      swhere := swhere + GetWhereFieldSQL(FField, FFieldSelectType);
-
+                     AddCollate(swhere, FCollateType);
                      // operator
                      case FCompare of
                         wcEqualField:
@@ -1227,48 +1259,43 @@ begin
                         Assert(False, 'unsupported type');
                      end;
 
-                     swhere := swhere + GetWhereFieldSQL(FField, FFieldSelectType);
+                     swhere := swhere + GetWhereFieldSQL(FCompareField, FFieldSelectType);
                   end;
                end
                else
                   Assert(False, 'unsupported class: ' + w.classname);
             end;
-         woExists:
+         woExists, woNotExists:
             begin
-               if swhere = '' then
-                  swhere := 'EXISTS('
-               else
-                  swhere := swhere + 'EXISTS(';
-
                with w as TWherePartSubQuery do
                begin
                   (FQuery as IQueryDetails).SetParentQuery(aQuery);
-                  swhere := swhere + GenerateSelect(aDefaultDB, FQuery as IQueryDetails, aParams);
+                  swhere := swhere + IfThen(w.FOperation = woNotExists,'not ') + 'Exists(' + IndentSQL(GenerateSelect(aDefaultDB, FQuery as IQueryDetails, aParams)) + ')';
                   (FQuery as IQueryDetails).SetParentQuery(nil); // reset, otherwise mem leak due to circular pointers!
                end;
-               swhere := swhere + ') ';
-            end;
-         woNotExists:
-            begin
-               if swhere = '' then
-                  swhere := 'NOT EXISTS('
-               else
-                  swhere := swhere + 'NOT EXISTS(';
-
-               with w as TWherePartSubQuery do
-               begin
-                  (FQuery as IQueryDetails).SetParentQuery(aQuery);
-                  swhere := swhere + GenerateSelect(aDefaultDB, FQuery as IQueryDetails, aParams);
-                  (FQuery as IQueryDetails).SetParentQuery(nil); // reset, otherwise mem leak due to circular pointers!
                end;
-               swhere := swhere + ') ';
-            end
       else
          Assert(False, 'unsupported type');
       end;
    end;
 
    Result := swhere;
+end;
+
+class function TSQLBuilder.IndentSQL(const aSQL: string): string;
+begin
+   Result := StringReplace(RemoveExtraEnters(aSQL), #13#10, #13#10+'        ',[rfReplaceAll])
+end;
+
+class function TSQLBuilder.RemoveExtraEnters(const aSQL: string): string;
+begin
+   Result := aSQL;
+   // remove double enters
+   while ContainsText(Result, #13#10#13#10) do
+      Result := StringReplace(Result, #13#10#13#10, #13#10, [rfReplaceAll]);
+   // Enter achteraan weghalen
+   if SameText(RightStr(Result, 2), #13#10) then
+      Result := Copy(Result, 1, Length(Result) - 2);
 end;
 
 end.

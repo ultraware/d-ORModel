@@ -1,6 +1,6 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <ProjectGuid>{8CB5CF5F-6065-4B01-A81E-2DD588A502EF}</ProjectGuid>
+        <ProjectGuid>{AC1273D1-01B3-41BC-8761-DA21654517CD}</ProjectGuid>
         <ProjectVersion>14.4</ProjectVersion>
         <FrameworkType>VCL</FrameworkType>
         <MainSource>CustomCrudGenerator.dpr</MainSource>
@@ -102,6 +102,9 @@
         <DCCReference Include="CRUDS\CRUD.TEST.pas"/>
         <DCCReference Include="CRUDS\Meta.TEST.pas"/>
         <DCCReference Include="CRUDS\Meta.CustomIDTypes.pas"/>
+        <DCCReference Include="..\UltraGenerator\fDBSettings.pas">
+            <Form>DBSettingsFrm</Form>
+        </DCCReference>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

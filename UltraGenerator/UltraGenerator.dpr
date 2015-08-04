@@ -13,20 +13,18 @@ uses
   uMetaLoader in 'uMetaLoader.pas',
   DB.Connection.SQLServer in '..\DB\DB.Connection.SQLServer.pas',
   DB.Settings.SQLServer in '..\DB\DB.Settings.SQLServer.pas',
-  DB.Provider.ADO in '..\DB\DB.Provider.ADO.pas';
+  DB.Provider.ADO in '..\DB\DB.Provider.ADO.pas',
+  UltraStringUtils in '..\Func\UltraStringUtils.pas';
 
 {$R *.res}
 
 begin
   Application.Initialize;
 
-  TfrmMain.OutputCRUDPath := ExtractFilePath(Application.ExeName) + 'CRUDs\';
-  TfrmMain.OutputBOPath := ExtractFilePath(Application.ExeName) + 'BO\';
-
   AddSQLDatabaseSettings('Server', 'Database', 'DatabaseUser', 'DatabasePasword');
 
   Application.MainFormOnTaskbar := True;
   Application.CreateForm(TfrmMain, frmMain);
-  Application.CreateForm(TfrmModelGenerator, frmModelGenerator);
+  //Application.CreateForm(TfrmModelGenerator, frmModelGenerator);
   Application.Run;
 end.

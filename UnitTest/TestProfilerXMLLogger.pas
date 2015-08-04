@@ -112,6 +112,9 @@ begin
   inherited;
 end;
 
+{:
+ Write F in the report file or on standard output if none specified
+}
 procedure TTestProfilerXMLLogger.WriteReport(const aStr: string; aOverwriteFromStart: Int64 = 0; aOverwriteTillEnd: Int64 = 0);
 var
   iwritten: Cardinal;
@@ -331,6 +334,9 @@ begin
   Result := test.Enabled;
 end;
 
+{:
+ Replace byt string by mot in text string
+ }
 class function TTestProfilerXMLLogger.StringReplaceAll(const text, byt, mot: string):string;
 begin
   Result := StringReplace(text, byt, mot, [rfReplaceAll]);

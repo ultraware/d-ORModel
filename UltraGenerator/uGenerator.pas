@@ -1,75 +1,189 @@
-{***************************************************************************}
-{                                                                           }
-{           d'ORModel - Model based ORM for Delphi                          }
-{			https://github.com/ultraware/d-ORModel							}
-{           Copyright (C) 2013-2014 www.ultraware.nl                        }
-{                                                                           }
-{***************************************************************************}
-{                                                                           }
-{  Licensed under the Apache License, Version 2.0 (the "License");          }
-{  you may not use this file except in compliance with the License.         }
-{  You may obtain a copy of the License at                                  }
-{                                                                           }
-{      http://www.apache.org/licenses/LICENSE-2.0                           }
-{                                                                           }
-{  Unless required by applicable law or agreed to in writing, software      }
-{  distributed under the License is distributed on an "AS IS" BASIS,        }
-{  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. }
-{  See the License for the specific language governing permissions and      }
-{  limitations under the License.                                           }
-{                                                                           }
-{***************************************************************************}
 unit uGenerator;
 
 interface
 
 uses
-  Classes,
-  Data.CRUDSettings;
+   Classes, SysUtils, Generics.Collections, Data.CRUDSettings;
 
 type
-  TGenerator = class
+  TProcedureReference = reference to procedure;
+  TCustomCRUDGeneratorFunc = reference to function(const aTable: TCRUDTable): string; 
+  TCustomCRUDDict = class(TDictionary<string,TCustomCRUDGeneratorFunc>);
+
+  TGeneratorSettings = class
   private
     class var FTemplatePath: string;
-    class var FTablesWithSeperateModels: TStrings;
-    class var FVertaalbaar: Boolean;
     class var FUsesCommonCustomTypes: Boolean;
-    class function InternalGenerateCRUDForTable(const aTable: TCRUDTable; bGenerateSeperateModel: boolean; out aSeperateModel: string): string;
+    class var FVertaalbaar: Boolean;
+    class var FOutputCRUDAndMetaPath: string;
+    class var FOnCreateTempTableDefs: TProcedureReference;
+    class var FCustomCRUDDict: TCustomCRUDDict;
+    class function GetOutputCRUDAndMetaPath: string; static;
+    class function GetTemplatePath: string; static;
+    class function GetOutputCustomIDTypesFile: string; static;
+    class function GetOutputSettingsFile: string; static;
+    class function GetCustomCRUDDIct: TCustomCRUDDict; static;
   public
-    class constructor Create;
-    class destructor  Destroy;
-
-    class function GenerateMetaForTable(const aTable: TCRUDTable): string; static;
-    class function GenerateCRUDForTable(const aTable: TCRUDTable): string; overload;
-    class function GenerateCRUDForTable(const aTable: TCRUDTable; out aSeperateModel: string): string; overload;
-    class function GenerateBOFOrTable(const aTable: TCRUDTable): string;
-    class function GenerateCustomMetaTypesOfAllTables: TStrings;
-
-    class property TemplatePath: string read FTemplatePath write FTemplatePath;
-    class property TablesWithSeperateModels: TStrings read FTablesWithSeperateModels;
+    class destructor Destroy;
     class property Vertaalbaar: Boolean read FVertaalbaar write FVertaalbaar;
     class property UsesCommonCustomTypes: Boolean read FUsesCommonCustomTypes write FUsesCommonCustomTypes;
+
+    class property TemplatePath: string read GetTemplatePath write FTemplatePath;
+    class property OutputCRUDPath: string read GetOutputCRUDAndMetaPath write FOutputCRUDAndMetaPath;
+    class property OutputMetaPath: string read GetOutputCRUDAndMetaPath write FOutputCRUDAndMetaPath;
+    class property OutputCustomIDTypesFile: string read GetOutputCustomIDTypesFile;
+    class property OutputSettingsFile: string read GetOutputSettingsFile;
+    class property OnCreateTempTableDefs: TProcedureReference read FOnCreateTempTableDefs write FOnCreateTempTableDefs;
+    class property CustomCRUDDict: TCustomCRUDDict read GetCustomCRUDDIct;
   end;
+
+   TGenerator = class
+   private
+     class var FTablesWithSeperateModels: TStrings;
+     class function InternalGenerateCRUDForTable(const aTable: TCRUDTable; const bGenerateSeperateModel: Boolean): Boolean; static;
+   public
+     class constructor Create;
+     class destructor  Destroy;
+
+     class function GenerateMetaForTable(const aTable: TCRUDTable): Boolean; static;
+     class function GenerateCRUDForTable(const aTable: TCRUDTable): Boolean; static;
+     class function GenerateModelForTable(const aTable: TCRUDTable): Boolean; static;
+     class function GenerateCustomMetaTypesOfAllTables: Boolean;
+
+     class procedure GetFieldInfo(const F: TCRUDField; const aTable: TCRUDTable; out sfieldtype, sAttr, sGetter: string; const MetaInAttribute: Boolean = False); static;      
+     class property TablesWithSeperateModels: TStrings read FTablesWithSeperateModels;
+   end;
 
 implementation
 
 uses
-  SysUtils, Variants, TypInfo, StrUtils,
-  uMetaLoader, Meta.Data;
-                                           
-const
-  C_FieldTypeName: array[Meta.Data.TFieldType] of string =
-  ( 'Unknown', 'ID', 'String', 'Boolean', 'Double', 'Integer', 'DateTime', 'Currency' );
+   TypInfo, StrUtils, Math, ADODB, Forms, IOUtils, Dialogs,
+   Meta.Data, 
+   DB.Connection.SQLServer, DB.Settings, DB.ConnectionPool,
+   uMetaLoader, UltraStringUtils;
 
-class function TGenerator.InternalGenerateCRUDForTable(
-  const aTable: TCRUDTable; bGenerateSeperateModel: boolean; out aSeperateModel: string): string;
-var
-  str, strFields, sAutojoinData1, sAutojoinData2, sAutojoinFunctions, sAutojoinUses: TStrings;
+class procedure TGenerator.GetFieldInfo(const F: TCRUDField; const aTable: TCRUDTable; out sfieldtype, sAttr, sGetter: string; const MetaInAttribute: Boolean = False);
+const C_FieldTypeName: array [Meta.Data.TFieldType] of string = ('Unknown', 'ID', 'String', 'Boolean', 'Double', 'Integer', 'DateTime', 'Currency');
+var ftype: Meta.Data.TFieldType;
+     str: string;
+begin
+   ftype := Meta.Data.TFieldType(TypInfo.GetEnumValue(TypeInfo(Meta.Data.TFieldType), f.FieldType));
+   Assert(Ord(ftype) >= 0);
+   if (f.CustomType <> '') then
+   begin
+      str := Copy(f.CustomType, 2, Length(f.CustomType)); // zonder T
+      sGetter := Format('Get%s', [str]);
+      sfieldtype := f.CustomType;
+   end
+   else
+   if (ftype = ftFieldID) or ((ftype = ftFieldInteger) and (f.IsFK)) then
+   begin
+      if (ftype = ftFieldID) then
+         str := aTable.TableName
+      else
+         str := f.FKTable;
+      sGetter := Format('GetTyped%s_IDField', [str]);
+      sfieldtype := Format('TTyped%s_IDField', [str]);
+   end
+   else
+   begin
+      str := C_FieldTypeName[ftype];
+      sGetter := Format('Get%sField', [str]);
+      sfieldtype := Format('TTyped%sField', [str]);
+   end;
+
+   if SameText(f.FieldNameDelphi, aTable.TableNameDelphi) then
+      str := f.FieldNameDelphi + '_'
+   else
+      str := f.FieldNameDelphi;
+   sAttr := Format('[%s(%s%s)]', [aTable.TableNameDelphi, ifthen(MetaInAttribute, Format('Meta.%s.', [aTable.TableNameDelphi])), str]);
+end;
+
+class function TGenerator.InternalGenerateCRUDForTable(const aTable: TCRUDTable; const bGenerateSeperateModel: Boolean): Boolean;
+var str, strFields, sAutojoinData1, sAutojoinData2, sAutojoinFunctions, sAutojoinUses, sParamFunctions: TStrings;
   f: TCRUDField;
-  ftype: Meta.Data.TFieldType;
-  sAttr, sType, sfieldtype, sProperty, sGetter, sName: string;
+    sAttr, sfieldtype, sProperty, sGetter, sName, ExtraUses, sFileName, sOrigineel, sData: string;
   iNr: Integer;
-  ExtraUses: string;
+
+   procedure SetTableFunctionParameters;
+
+      function DataTypeToDelphiDataType(aType: string): string;
+      begin
+         if StringIn(aType, 'int,tinyint,smallint,ntext,numeric,bigint') then
+            Result := 'Integer'
+         else if StringIn(aType, 'text,varchar,nvarchar') then
+            Result := 'string'
+         else if StringIn(aType, 'real,float,decimal') then
+            Result := 'Double'
+         else if StringIn(aType, 'money,smallmoney') then
+            Result := 'Currency'
+         else if StringIn(aType, 'datetime,smalldatetime') then
+            Result := 'TDateTime'
+         else if StringIn(aType, 'date') then
+            Result := 'TDate'
+         else if StringIn(aType, 'timestamp') then
+            Result := 'TTime'
+         else if StringIn(aType, 'sql_variant') then
+            Result := 'Variant'
+         else if StringIn(aType, 'bit') then
+            Result := 'Boolean'
+         else if StringIn(aType, 'char,nchar') then
+            Result := 'Char'
+      end;
+
+   var Connection: TBaseADOConnection;
+       dbconn: TDBConfig;
+       mssql: TMSSQLConnection;
+       parameterName, procedureStr: string;
+       ds: TADODataSet;
+       index: Integer;
+   begin
+      dbconn := TDBSettings.Instance.GetDBConnection('', dbtNone); // get specific settings or first in case no dbtype etc
+      Connection := TDBConnectionPool.GetConnectionFromPool(dbconn) as TBaseADOConnection;
+      Assert(Connection is TMSSQLConnection);
+      mssql := (Connection as TMSSQLConnection);
+      ds := TADODataSet.Create(nil);
+      ds.Close;
+
+      with TADOCommand.Create(nil) do
+      begin
+         try
+            ConnectionString := mssql.ADOConnection.ConnectionString;
+            CommandText := 'SELECT replace(p.name, ''@'', '''') as ParameterName, t.name as DataType ' + 
+                  'FROM sys.objects o ' +
+                  '    inner join sys.parameters p on (p.object_id = o.object_id) ' + 
+                  '    inner join sys.types t on (p.system_type_id = t.system_type_id) ' +
+                  'WHERE o.Name = ' + QuotedStr(aTable.TableName) + ' '+
+                  'Order by p.parameter_id';
+            ds.Recordset := Execute;
+         finally
+            Free;
+         end;
+      end;
+
+      ds.First;
+      index := 0;
+      strFields.Add('');
+      while not ds.Eof do
+      begin
+         parameterName := Capitalize(ds.FieldByName('ParameterName').AsString);
+         procedureStr := 'Set' + parameterName + '(const ' + parameterName + ': ' + DataTypeToDelphiDataType(ds.FieldByName('DataType').AsString) + ');';
+         with sParamFunctions do
+         begin
+            Add('procedure T' + aTable.TableNameDelphi + '.' + procedureStr);
+            Add('begin');
+            Add('   GetFieldForID.SetTableParameter(' + parameterName + ', ' + IntToStr(index) + ');');
+            Add('end;');
+            Add('');
+         end;
+         strFields.Add('    procedure ' + procedureStr);
+
+         Inc(index);
+         ds.Next;
+      end;
+   end;
+
+var CustomCRUDGeneratorFunc: TCustomCRUDGeneratorFunc;
 begin
   sAutojoinData1 := nil;
   sAutojoinData2 := nil;
@@ -78,76 +192,53 @@ begin
   ExtraUses := '';
 
   str := TStringList.Create;
-
-  if UsesCommonCustomTypes then
-     ExtraUses := ', Data.CommonCustomTypes';
+  sParamFunctions := TStringList.Create;
   strFields := TStringList.Create;
   try
-    if TemplatePath = '' then
-      TemplatePath := '..\..\templates\';
-    str.LoadFromFile(TemplatePath + '\mcTemplateCRUD.inc');
+    if bGenerateSeperateModel then
+      sFileName := aTable.ModelFileName
+    else
+      sFileName := aTable.CRUDFileName;
+            
+    if (not bGenerateSeperateModel) and TGeneratorSettings.CustomCRUDDict.TryGetValue(aTable.TableName, CustomCRUDGeneratorFunc) then
+      sData := CustomCRUDGeneratorFunc(aTable)
+    else
+    begin    
+      if TGeneratorSettings.UsesCommonCustomTypes then
+         ExtraUses := ', Data.CommonCustomTypes';      
+      if FileExists(sFileName) then
+      begin
+         str.LoadFromFile(sFileName);
+         sOrigineel := str.Text;
+         str.Clear;
+      end
+      else
+         sOrigineel := '';
+
+      str.LoadFromFile(TGeneratorSettings.TemplatePath + '\mcTemplateCRUD.inc');
 
     str.Text := StringReplace(str.Text, '%Uses%'   , ExtraUses, [rfReplaceAll]);
     str.Text := StringReplace(str.Text, '%UnitName%'   , aTable.TableNameDelphi, [rfReplaceAll]);
     str.Text := StringReplace(str.Text, '%TableName%'   , aTable.TableNameDelphi, [rfReplaceAll]);
     str.Text := StringReplace(str.Text, '%DBTableName%' , aTable.TableName, [rfReplaceAll]);
-//    str.Text := StringReplace(str.Text, '%Database%'    , aTable.Database,  [rfReplaceAll]);
+
     if bGenerateSeperateModel then
-      //Model.Relatie_T.TRelatie_T
       str.Text := StringReplace(str.Text, '%TJoinableDataRecord%' , 'Model.' + aTable.TableNameDelphi + '.T' + aTable.TableNameDelphi, [rfReplaceAll])
     else
       str.Text := StringReplace(str.Text, '%TJoinableDataRecord%' , 'TJoinableDataRecord', [rfReplaceAll]);
 
-    if aTable.FieldCount = 0 then
+         if (aTable.FieldCount = 0) then
       TMetaLoader.FillFieldsForTable(aTable);
 
     iNr := 0;
     for f in aTable.Fields do
     begin
-      if SameText(f.FieldNameDelphi, aTable.TableNameDelphi) then
-        sAttr   := Format('    [%s(%s)]', [aTable.TableNameDelphi, f.FieldNameDelphi + '_'])  //Gegegeven tabel met Gegegeven veld...
-      else
-        sAttr   := Format('    [%s(%s)]', [aTable.TableNameDelphi, f.FieldNameDelphi]);
-
-      ftype := Meta.Data.TFieldType(TypInfo.GetEnumValue(TypeInfo(Meta.Data.TFieldType), f.FieldType));
-      Assert(Ord(ftype) >= 0);
-      sType := C_FieldTypeName[ftype];
-      //GetTyped...Field
-      if ftype = ftFieldID then
-      begin
-        sGetter    := format('GetTyped%s_IDField', [aTable.TableName]);
-        sfieldtype := format('TTyped%s_IDField', [aTable.TableName]);
-      end
-      else if (ftype = ftFieldInteger) and
-              (f.IsFK) then
-      begin
-        sGetter    := format('GetTyped%s_IDField', [f.FKTable]);
-        sfieldtype := format('TTyped%s_IDField', [f.FKTable]);
-      end
-      else
-      begin
-        sGetter := format('Get%sField', [sType]);
-        sfieldtype := 'TTyped' + sType + 'Field';
-      end;
-
-      if f.CustomType <> '' then
-      begin
-        sType   := Copy(f.CustomType, 2, Length(f.CustomType));
-        sGetter := format('Get%s', [sType]);
-        sfieldtype := f.CustomType;
-      end;
-
-      sProperty  := Format('property  %-26s : %-25s  index %3d read %s;'
-                          ,[f.FieldNameDelphi, sfieldtype, iNr, sGetter]);
-      inc(iNr);
+      GetFieldInfo(f, aTable, sfieldtype, sAttr, sGetter);
+      sProperty := Format('property  %-26s : %-25s  index %3d read %s;', [f.FieldNameDelphi, sfieldtype, iNr, sGetter]);
+      Inc(iNr);
 
       strFields.Add(Format('%-45s  %s', [sAttr, sProperty]));
     end;
-
-    if not bGenerateSeperateModel then
-      str.Text := StringReplace(str.Text, '%DataPropertyFields%',  trim(strFields.Text), [rfReplaceAll])
-    else
-      str.Text := StringReplace(str.Text, '%DataPropertyFields%',  '//see Model.' + aTable.TableNameDelphi + '.pas', [rfReplaceAll]);
 
     //auto join child data (Bedrijf.Contactpersoon.Relatie etc)
     sAutojoinData1     := TStringList.Create;
@@ -156,14 +247,11 @@ begin
     sAutojoinUses      := TStringList.Create;
 
     if bGenerateSeperateModel then
-      //Model.Relatie_T
       sAutojoinUses.Add('Model.' + aTable.TableNameDelphi);
 
     for f in aTable.Fields do
     begin
-      if f.IsFK and (f.FKTable <> '') and
-         (f.FKTable <> 'Object') and
-         f.GenerateDirectJoin then
+      if f.IsFK and (f.FKTable <> '') and (f.FKTable <> 'Object') and f.GenerateDirectJoin then
       begin
         if sAutojoinData1.Count = 0 then
         begin
@@ -186,9 +274,8 @@ begin
         end;
 
         sName := Copy(f.FieldNameDelphi, 1, Pos('_ID', f.FieldNameDelphi)-1);  //remove last _ID part
-        //indien niet eindigd met _ID
         if sName = '' then
-          sName := f.FieldNameDelphi + '_';   //_ voor unieke naam
+          sName := f.FieldNameDelphi + '_';   
 
         while (aTable.FindField(sName, False) <> nil) do
         begin
@@ -207,6 +294,9 @@ begin
       end;
     end;
 
+    if (aTable.TableFunctionParameterCount > 0) then
+      SetTableFunctionParameters;
+
     if sAutojoinUses.Count > 0 then
     begin
       sAutojoinUses.LineBreak := '';
@@ -217,8 +307,7 @@ begin
 
     if (sAutojoinData1.Count > 0) then
     begin
-      str.Text := StringReplace(str.Text, '%DataAutoJoinChildData%', #13'  ' + Trim(sAutojoinData1.Text) +
-                                                                     #13'  ' + Trim(sAutojoinData2.Text), []);
+      str.Text := StringReplace(str.Text, '%DataAutoJoinChildData%', #13'  ' + Trim(sAutojoinData1.Text) + #13'  ' + Trim(sAutojoinData2.Text), []);
       str.Text := StringReplace(str.Text, '%DataAutoJoinChildDataFunctions%', #13 + Trim(sAutojoinFunctions.Text) + #13, []);
     end
     else
@@ -227,20 +316,30 @@ begin
       str.Text := StringReplace(str.Text, '%DataAutoJoinChildDataFunctions%', '', []);
     end;
 
-    Result := str.Text;
+    if not bGenerateSeperateModel then
+      str.Text := StringReplace(str.Text, '%DataPropertyFields%', Trim(strFields.Text), [rfReplaceAll])
+    else
+      str.Text := StringReplace(str.Text, '%DataPropertyFields%', '//see Model.' + aTable.TableNameDelphi + '.pas', [rfReplaceAll]);
+
+    str.Text := StringReplace(str.Text, '%DataSetParamFunctions%', sParamFunctions.Text, []);
 
     if bGenerateSeperateModel then
     begin
-      str.LoadFromFile(TemplatePath + '\mcTemplateCRUDModel.inc');
+      str.LoadFromFile(TGeneratorSettings.TemplatePath + '\mcTemplateCRUDModel.inc');
 
       str.Text := StringReplace(str.Text, '%Uses%'   , ExtraUses, [rfReplaceAll]);
       str.Text := StringReplace(str.Text, '%UnitName%'   , aTable.TableNameDelphi, [rfReplaceAll]);
       str.Text := StringReplace(str.Text, '%TableName%'   , aTable.TableNameDelphi, [rfReplaceAll]);
       str.Text := StringReplace(str.Text, '%DBTableName%' , aTable.TableName, [rfReplaceAll]);
-      str.Text := StringReplace(str.Text, '%DataPropertyFields%',  trim(strFields.Text), [rfReplaceAll]);
-      aSeperateModel := str.Text;
+      str.Text := StringReplace(str.Text, '%DataPropertyFields%', Trim(strFields.Text), [rfReplaceAll]);
     end;
 
+    sData := str.Text;
+   end;
+
+   Result := (not SameText(sData, sOrigineel));
+   if Result then
+     TFile.WriteAllText(sFileName, sData);
   finally
     strFields.Free;
     str.Free;
@@ -248,14 +347,13 @@ begin
     sAutojoinData2.Free;
     sAutojoinFunctions.Free;
     sAutojoinUses.Free;
+    sParamFunctions.Free;
   end;
 end;
 
-class function TGenerator.GenerateCRUDForTable(
-  const aTable: TCRUDTable): string;
-var s: string;
+class function TGenerator.GenerateCRUDForTable(const aTable: TCRUDTable): Boolean;
 begin
-  Result := InternalGenerateCRUDForTable(aTable, False, s);
+   Result := InternalGenerateCRUDForTable(aTable, False);
 end;
 
 class constructor TGenerator.Create;
@@ -268,111 +366,26 @@ begin
   FTablesWithSeperateModels.Free;
 end;
 
-class function TGenerator.GenerateBOFOrTable(const aTable: TCRUDTable): string;
-var
-  Str, DataProperties, GetterDeclarations, PropertyDeclarations, Getters: TStringList;
-  f: TCRUDField;
-  ftype: Meta.Data.TFieldType;
-  sAttr, sType, sfieldtype, sProperty, sGetter, sFieldName: string;
-  iNr: Integer;
-  ExtraUses: string;
+class function TGenerator.GenerateModelForTable(const aTable: TCRUDTable): Boolean;
 begin
-   ExtraUses := '';
-
-   if UsesCommonCustomTypes then
-      ExtraUses := ', Data.CommonCustomTypes';
-   GetterDeclarations := TStringList.Create;
-   PropertyDeclarations := TStringList.Create;
-   Getters := TStringList.Create;
-   Str := TStringList.Create;
-   DataProperties := TStringList.Create;
-   try
-      if TemplatePath = '' then
-         TemplatePath := '..\..\templates\';
-      str.LoadFromFile(TemplatePath + '\mcTemplateBO.inc');
-
-      str.Text := StringReplace(str.Text, '%Uses%', ExtraUses, [rfReplaceAll]);
-      str.Text := StringReplace(str.Text, '%TableName%', aTable.TableNameDelphi, [rfReplaceAll]);
-
-      if aTable.FieldCount = 0 then
-         TMetaLoader.FillFieldsForTable(aTable);
-
-      iNr := 0;
-      for f in aTable.Fields do
-      begin
-         if SameText(f.FieldNameDelphi, aTable.TableNameDelphi) then
-            sFieldName := f.FieldNameDelphi + '_'
-         else
-            sFieldName := f.FieldNameDelphi;
-         sAttr := Format('      [%s(%s)]', [aTable.TableNameDelphi, sFieldName]);
-
-         ftype := Meta.Data.TFieldType(TypInfo.GetEnumValue(TypeInfo(Meta.Data.TFieldType), f.FieldType));
-         Assert(Ord(ftype) >= 0);
-         sType := C_FieldTypeName[ftype];
-         // GetTyped...Field
-         if ftype = ftFieldID then
-         begin
-            sGetter := Format('GetTyped%s_IDField', [aTable.TableNameDelphi]);
-            sfieldtype := Format('TTyped%s_IDField', [aTable.TableNameDelphi]);
-         end
-         else if (ftype = ftFieldInteger) and (f.IsFK) then
-         begin
-            sGetter := Format('GetTyped%s_IDField', [f.FKTable]);
-            sfieldtype := Format('TTyped%s_IDField', [f.FKTable]);
-         end
-         else
-         begin
-            sGetter := Format('Get%sField', [sType]);
-            sfieldtype := 'TTyped' + sType + 'Field';
-         end;
-
-         if f.CustomType <> '' then
-         begin
-            sType := Copy(f.CustomType, 2, Length(f.CustomType));
-            sGetter := Format('Get%s', [sType]);
-            sfieldtype := f.CustomType;
-         end;
-
-         sProperty := Format('property  %-26s : %-25s  index %3d read %s;', [f.FieldNameDelphi, sfieldtype, iNr, sGetter]);
-         inc(iNr);
-
-         DataProperties.Add(Format('%-45s  %s', [sAttr, sProperty]));
-         GetterDeclarations.Add(Format('      function  Get%-26s : %s;',[sFieldname, sfieldtype]));
-         PropertyDeclarations.Add(Format('      property  %-26s : %-25s read Get%s;',[sFieldname, sfieldtype, sFieldName]));
-
-         Getters.Add(Format('function TBO%s.Get%s: %s;',[aTable.TableNameDelphi, sFieldName, sFieldType]));
-         Getters.Add('begin');
-         Getters.Add(Format('   Result := Meta.%s;',[sFieldName]));
-         Getters.Add('end;');
-         Getters.Add('');
-      end;
-
-      Str.Text := StringReplace(Str.Text, '%DataPropertyFields%',  trim(DataProperties.Text), [rfReplaceAll]);
-      Str.Text := StringReplace(Str.Text, '%PropertyGetterDeclarations%',  trim(GetterDeclarations.Text), [rfReplaceAll]);
-      Str.Text := StringReplace(Str.Text, '%PropertyDeclarations%',  trim(PropertyDeclarations.Text), [rfReplaceAll]);
-      Str.Text := StringReplace(Str.Text, '%PropertyGetters%',  trim(Getters.Text), [rfReplaceAll]);
-      Result := Str.Text;
-   finally
-      GetterDeclarations.Free;
-      PropertyDeclarations.Free;
-      Getters.Free;
-      Str.Free;
-      DataProperties.Free;
-   end;
+   Result := InternalGenerateCRUDForTable(aTable, True);
 end;
 
-class function TGenerator.GenerateCRUDForTable(const aTable: TCRUDTable;
-  out aSeperateModel: string): string;
-begin
-  Result := InternalGenerateCRUDForTable(aTable, True, aSeperateModel);
-end;
-
-class function TGenerator.GenerateCustomMetaTypesOfAllTables: TStrings;
-var
-  strCustomTypes: TStrings;
+class function TGenerator.GenerateCustomMetaTypesOfAllTables: Boolean;
+var strCustomTypes: TStrings;
+    sFileName, sOrgineelTxt: string;
   t: TCRUDTable;
 begin
+   sFileName := TGeneratorSettings.OutputCustomIDTypesFile;
   strCustomTypes := TStringList.Create;
+   if FileExists(sFileName) then
+   begin
+      strCustomTypes.LoadFromFile(sFileName);
+      sOrgineelTxt := strCustomTypes.Text;
+      strCustomTypes.Clear;
+   end
+   else
+      sOrgineelTxt := '';
 
   strCustomTypes.Add('unit Meta.CustomIDTypes;');
   strCustomTypes.Add('');
@@ -385,8 +398,11 @@ begin
 
   for t in CRUDSettings.Tables do
   begin
-    strCustomTypes.Add(Format('  T%s_ID = type TBaseIDValue;',[t.TableName])                     );
-    strCustomTypes.Add(Format('  TTyped%s_IDField = class(TCustomIDField<T%0:s_ID>);',[t.TableName]) );
+    if t.IsDataBaseTable then
+    begin
+      strCustomTypes.Add(Format('  T%s_ID = type TBaseIDValue;',[t.TableName])                     );
+      strCustomTypes.Add(Format('  TTyped%s_IDField = class(TCustomIDField<T%0:s_ID>);',[t.TableName]) );
+    end;
   end;
 
   strCustomTypes.Add('');
@@ -394,7 +410,8 @@ begin
   strCustomTypes.Add('  protected');
   for t in CRUDSettings.Tables do
   begin
-    strCustomTypes.Add(Format('    function GetTyped%s_IDField(aIndex: Integer): TTyped%0:s_IDField;',[t.TableName]) );
+    if t.IsDataBaseTable then
+      strCustomTypes.Add(Format('    function GetTyped%s_IDField(aIndex: Integer): TTyped%0:s_IDField;',[t.TableName]) );
   end;
   strCustomTypes.Add('  end;');
 
@@ -406,61 +423,69 @@ begin
 
   for t in CRUDSettings.Tables do
   begin
-    strCustomTypes.Add(Format('function TDataRecord_Helper.GetTyped%s_IDField(aIndex: Integer): TTyped%0:s_IDField;',[t.TableName]) );
-    strCustomTypes.Add(       'begin');
-    strCustomTypes.Add(Format('  Result := GetTypedField<TTyped%s_IDField>(aIndex);',[t.TableName]) );
-    strCustomTypes.Add(       'end;');
-    strCustomTypes.Add('');
+    if t.IsDataBaseTable then
+    begin
+      strCustomTypes.Add(Format('function TDataRecord_Helper.GetTyped%s_IDField(aIndex: Integer): TTyped%0:s_IDField;',[t.TableName]) );
+      strCustomTypes.Add(       'begin');
+      strCustomTypes.Add(Format('  Result := GetTypedField<TTyped%s_IDField>(aIndex);',[t.TableName]) );
+      strCustomTypes.Add(       'end;');
+      strCustomTypes.Add('');
+    end;
   end;
 
   strCustomTypes.Add('end.');
-  Result := strCustomTypes;
+  Result := not SameText(strCustomTypes.Text, sOrgineelTxt);
+  if Result then
+    TFile.WriteAllText(sFileName, strCustomTypes.Text);
 end;
 
-class function TGenerator.GenerateMetaForTable(const aTable: TCRUDTable): string;
-var
-  str, strTemplate: TStrings;
+class function TGenerator.GenerateMetaForTable(const aTable: TCRUDTable): Boolean;
+var str, strTemplate: TStrings;
   f: TCRUDField;
-  sAttr, sClass: string;
-
-  function IfThen(AValue: Boolean; const ATrue: string; const AFalse: string): string;
-  begin
-    if Avalue then
-      Result := ATrue
-    else
-      Result := AFalse
-  end;
+    sAttr, sClass, ExtraUses, sFileName, sOrigineelText: string;
+    UseExtraStamUses: Boolean;
 
   function GenerateDisplayLabeltext(const Field: TCRUDField): string;
   begin
-   if Vertaalbaar then
-     Result := 'TranslateString('+QuotedStr(Field.Displaylabel)+')' // Dit zorgt ervoor dat tekst wordt opgepikt door vertaalEngine
-   else
+    if TGeneratorSettings.Vertaalbaar then
+      Result := 'TranslateString('+QuotedStr(Field.Displaylabel)+')' // Dit zorgt ervoor dat tekst wordt opgepikt door vertaalEngine
+    else
       Result := QuotedStr(Field.Displaylabel);
   end;
 
-var ExtraUses: string;
 begin
   str := TStringList.Create;
   strTemplate := TStringList.Create;
+  UseExtraStamUses := False;
   try
-    if TemplatePath = '' then
-      TemplatePath := '..\..\templates\';
-    strTemplate.LoadFromFile(TemplatePath + '\mcTemplateMetaData.inc');
+    sFileName := aTable.MetaFileName;
+    if FileExists(sFileName) then
+    begin
+      strTemplate.LoadFromFile(sFileName);
+      sOrigineelText := strTemplate.Text;
+      strTemplate.Clear;
+    end
+    else
+      sOrigineelText := '';
+
+    strTemplate.LoadFromFile(TGeneratorSettings.TemplatePath + '\mcTemplateMetaData.inc');
 
     strTemplate.Text := StringReplace(strTemplate.Text, '%UnitName%'   , aTable.TableNameDelphi, [rfReplaceAll]);
     strTemplate.Text := StringReplace(strTemplate.Text, '%TableName%'   , aTable.TableNameDelphi, [rfReplaceAll]);
     strTemplate.Text := StringReplace(strTemplate.Text, '%DBTableName%' , aTable.TableName, [rfReplaceAll]);
-//    strTemplate.Text := StringReplace(strTemplate.Text, '%Database%'    , aTable.Database,  [rfReplaceAll]);
 
-    str.Add( Format('  T%sField      = class(TBaseTableField);',
-                    [aTable.TableNameDelphi]) );
-    str.Add( Format('  T%sFieldClass = class of T%sField;',
-                    [aTable.TableNameDelphi, aTable.TableNameDelphi]) );
+    str.Add(Format('  T%sField      = class(TBaseTableField);', [aTable.TableNameDelphi]));
+    str.Add(Format('  T%sFieldClass = class of T%sField;', [aTable.TableNameDelphi, aTable.TableNameDelphi]));
     str.Add('');
-    str.Add( Format('  [TTableMeta(%s)]',       //todo: also table type? e.g. table, view
-                    [QuotedStr(aTable.TableName)])
-           );
+
+    str.Add('  {$RTTI INHERIT}');       //inherit
+
+    if (aTable.TableFunctionParameterCount > 0) then
+      str.Add(Format('  [TFunctionTableMeta(%s, %d)]', // todo: also table type? e.g. table, view
+         [QuotedStr(aTable.TableName), aTable.TableFunctionParameterCount]))
+    else
+      str.Add(Format('  [TTableMeta(%s)]', // todo: also table type? e.g. table, view
+         [QuotedStr(aTable.TableName)]));
 
     str.Add(Format('  %s = class(TBaseTableAttribute)',[aTable.TableNameDelphi]));
     str.Add(       '  public');
@@ -474,6 +499,7 @@ begin
     //iNr := 0;
     for f in aTable.Fields do
     begin
+      //if f.FieldType in [ftFieldID] then
       begin
         sAttr := Format('  [%-18s(%s, %s, %s, %s', //)]',
                         [TTypedMetaField.ClassName,
@@ -489,7 +515,6 @@ begin
         sAttr := sAttr + ', ' + QuotedStr(f.EditMask);
 
         //strip empty optional values
-        //'  [TTypedMetaField   (''Status'', ftFieldInteger, True{required}, '''', 0, '''', 0, '''', '''')]'
         if EndsStr(', 0, '''', 0, '''', ''''', sAttr) then
           sAttr := Copy(sAttr, 1, Length(sAttr) - Length(', 0, '''', 0, '''', '''''));
 
@@ -498,29 +523,25 @@ begin
 
       if f.IsPK then
         //[TPKMetaField]
-                 str.Add( Format('  [%s]', [TPKMetaField.ClassName]) );
+        str.Add( Format('  [%s(%s)]', [TPKMetaField.ClassName, IfThen(f.IsAutoInc, 'True{autoinc}', 'False{no autoinc}')]) );
       if f.IsFK then
         //[TFKMetaField]
-                 str.Add(Format('  [%s(''%s'', ''%s'')]', [TFKMetaField.ClassName, f.FKTable, f.FKField]) );
+        str.Add(Format('  [%s(''%s'', ''%s'')]', [TFKMetaField.ClassName, f.FKTable, f.FKField]) );
 
-     if f.HasDefault and (not f.SkipDefault) then
+      if f.HasDefault and (not f.SkipDefault) then
       begin
-        str.Add( Format('  [%-18s(%s)]',
-                        [TDefaultValueMeta.ClassName,
-                         QuotedStr(f.DefaultValue)]) );
+        str.Add(Format('  [%-18s(%s)]', [TDefaultValueMeta.ClassName, QuotedStr(f.DefaultValue)]));
       end;
 
       if SameText(f.FieldNameDelphi, aTable.TableNameDelphi) then                    //Gegegeven tabel met Gegegeven veld...
-        sClass := Format('    %-20s  = class(T%sField);',
-                        [f.FieldNameDelphi + '_', aTable.TableNameDelphi])
+        sClass := Format('    %-20s  = class(T%sField);', [f.FieldNameDelphi + '_', aTable.TableNameDelphi])
       else
-        sClass := Format('    %-20s  = class(T%sField);',
-                        [f.FieldNameDelphi, aTable.TableNameDelphi]);
+        sClass := Format('    %-20s  = class(T%sField);', [f.FieldNameDelphi, aTable.TableNameDelphi]);
       str.Add( Format('%-90s   %s', [sAttr, sClass]) );
     end;
 
     ExtraUses := '';
-    if VertaalBaar then
+    if TGeneratorSettings.Vertaalbaar then
       ExtraUses := ExtraUses + ', UltraStringUtils';
 
     //fill template
@@ -536,15 +557,63 @@ begin
     //fill templace
     strTemplate.Text := StringReplace(strTemplate.Text, '%implementation%', str.Text,    [rfReplaceAll]);
 
-    Result := strTemplate.Text;
+    Result := not SameText(strTemplate.Text, sOrigineelText);
+    if Result then
+      TFile.WriteAllText(sFileName, strTemplate.Text);
   finally
     strTemplate.Free;
     str.Free;
   end;
 end;
 
+{ TGeneratorSettings }
+
+class destructor TGeneratorSettings.Destroy;
+begin
+   FCustomCRUDDict.Free;
+   inherited;
+end;
+
+class function TGeneratorSettings.GetCustomCRUDDIct: TCustomCRUDDict;
+begin
+   if (not Assigned(FCustomCRUDDict)) then
+      FCustomCRUDDict := TCustomCRUDDict.Create;
+   Result := FCustomCRUDDict;
+end;
+
+class function TGeneratorSettings.GetTemplatePath: string;
+begin
+   Result := FTemplatePath;
+   if (Result = '') then
+   begin
+      FTemplatePath := '..\..\templates\';
+      Result := FTemplatePath;
+   end;
+end;
+
+class function TGeneratorSettings.GetOutputCRUDAndMetaPath: string;
+begin
+   Result := FOutputCRUDAndMetaPath;
+   if (Result = '') then
+   begin
+      FOutputCRUDAndMetaPath := ExtractFilePath(Application.ExeName) + 'CRUDs\';
+      Result := FOutputCRUDAndMetaPath;
+   end;
+   ForceDirectories(Result);
+end;
+
+class function TGeneratorSettings.GetOutputCustomIDTypesFile: string;
+begin
+   Result := OutputCRUDPath + 'Meta.CustomIDTypes.pas';
+end;
+
+class function TGeneratorSettings.GetOutputSettingsFile: string;
+begin
+   Result := OutputCRUDPath + cCRUDSettings_XML;
+end;
+
 initialization
-  TGenerator.Vertaalbaar := False;
-  TGenerator.UsesCommonCustomTypes := False;
+  TGeneratorSettings.Vertaalbaar := False;
+  TGeneratorSettings.UsesCommonCustomTypes := False;
 
 end.

@@ -12,7 +12,7 @@ uses
 
 type
   T%TableName% = class(%TJoinableDataRecord%) %DataAutoJoinChildData%
-  public
+  published
     %DataPropertyFields%
   end;
 
@@ -35,4 +35,5 @@ begin
   end;
 end;
 %DataAutoJoinChildDataFunctions%
+%DataSetParamFunctions%
 end.

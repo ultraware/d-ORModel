@@ -82,6 +82,7 @@ type
     function  QueryFindGetRecNo: Integer;
     function  QueryFindSetRecNo(aRecNo: Integer): Boolean;
     property  QueryFindSortString: String read GetQueryFindSortString write SetQueryFindSortString;
+    function  QueryFindCompareBookmark(Bookmark1, Bookmark2: TBookmark): Integer;
     function  QueryFindGetBookmark: TBookmark;
     procedure QueryFindSetBookmark(const aBookmark: TBookmark);
     //
@@ -100,6 +101,7 @@ type
 
     property IDField: TBaseIDField read GetIDField;
     property Data: TDataRecord read FData;
+    property FindData: TBaseFindResults read FFindData;
   end;
 
   //tip: keep generic class as small as possible, otherwise big exe size because of large code generation
@@ -156,7 +158,7 @@ destructor TBaseDataCRUD.Destroy;
 begin
   TThreadFinalization.UnRegisterThreadObject(self);
   FQuery := nil;   //not needed but in case it goes wrong we see which interface.free gives problems
-  FFindData.Free;
+  FreeAndNil(Self.FFindData);  //clear previous find data
   FData.Free;
   inherited;
 end;
@@ -340,6 +342,12 @@ end;
 procedure TBaseDataCRUD.QueryFindClose;
 begin
   FreeAndNil(Self.FFindData);  //clear pending find data
+end;
+
+function TBaseDataCRUD.QueryFindCompareBookmark(Bookmark1, Bookmark2: TBookmark): Integer;
+begin
+  Assert(Self.FFindData <> nil);  //a QueryFindFirst must be done before this
+  Result := GetProvider.QueryFindCompareBookmark(Self.FFindData, Bookmark1, Bookmark2);
 end;
 
 function TBaseDataCRUD.QueryFindCount: Integer;

@@ -27,6 +27,7 @@ uses
   Types;
 
 type
+  {$RTTI EXPLICIT METHODS([vcPublic, vcPublished]) PROPERTIES([vcPublished]) FIELDS([])}
   TMetaAttribute = class(TCustomAttribute)
   protected
     FRefCount: Integer;
@@ -71,7 +72,7 @@ type
 
   TFieldType  = (
                   ftFieldUnknown,
-                  ftFieldID,       //autoinc, pk
+                  ftFieldID,       //PK field (can be without autoinc!)
                   ftFieldString,
                   ftFieldBoolean,
                   ftFieldDouble,
@@ -81,7 +82,13 @@ type
                 );
 
   TKeyMetaField  = class(TBaseFieldMeta);
-  TPKMetaField   = class(TKeyMetaField);
+  TPKMetaField   = class(TKeyMetaField)
+  private
+    FIsAutoInc: boolean;
+  public
+    constructor Create(const aIsAutoInc: Boolean = True);
+    property IsAutoInc: boolean read FIsAutoInc;
+  end;
 
   TFKMetaField   = class(TKeyMetaField)
   private
@@ -140,6 +147,7 @@ type
     FEditMask: string;
     FMinValue: Double;
     FMaxValue: Double;
+    FVisible: Boolean;
     procedure SetDisplayLabel(const Value: string);
     procedure SetDefaultValue(const Value: TDefaultValueMeta);
     procedure SetRequired(const Value: Boolean);
@@ -150,6 +158,7 @@ type
     function  GetDisplayLabel: string;
     procedure SetMaxValue(const Value: Double);
     procedure SetMinValue(const Value: Double);
+    procedure SetVisible(const Value: Boolean);
   public
     constructor Create(const aFieldName: string;
                        aFieldType: TFieldType;
@@ -161,7 +170,8 @@ type
                        const aDisplayFormat: string = '';
                        const aDisplayWidth: Integer = 0;
                        const aEditFormat: string = '';
-                       const aEditMask: string = ''
+                       const aEditMask: string = '';
+                       const aVisible: Boolean = True
                        ); overload;
     //compatible with older metadata:
     constructor Create(const aFieldName: string;
@@ -189,6 +199,7 @@ type
     property EditFormat   : string        read FEditFormat write SetEditFormat;
     //generic editmask: http://docwiki.embarcadero.com/Libraries/XE5/en/Vcl.Mask.TCustomMaskEdit.EditMask
     property EditMask     : string        read FEditMask write SetEditMask;
+    property Visible      : Boolean       read FVisible write SetVisible;
   end;
 
   TBaseTableField      = class(TObject);
@@ -276,6 +287,7 @@ begin
   Self.FRequired       := aSource.FRequired;
   Self.FMinValue       := aSource.FMinValue;
   Self.FMaxValue       := aSource.FMaxValue;
+  Self.FVisible         := aSource.FVisible;
 end;
 
 function TTypedMetaField.Clone: TTypedMetaField;
@@ -295,7 +307,7 @@ constructor TTypedMetaField.Create(const aFieldName: string;
   aFieldType: TFieldType; aRequired: Boolean; const aDisplayLabel: string;
   aMinValue: Double; aMaxValue: Double;
   const aDisplayFormat: string = ''; const aDisplayWidth: Integer = 0; const aEditFormat: string = '';
-  const aEditMask: string = '');
+  const aEditMask: string = ''; const aVisible: Boolean = True);
 begin
   FFieldName     := aFieldName;
   FFieldType     := aFieldType;
@@ -308,6 +320,7 @@ begin
   FDisplayWidth  := aDisplayWidth;
   FEditFormat    := aEditFormat;
   FEditMask      := aEditMask;
+  FVisible       := aVisible;
 end;
 
 destructor TTypedMetaField.Destroy;
@@ -374,6 +387,11 @@ end;
 procedure TTypedMetaField.SetRequired(const Value: Boolean);
 begin
   FRequired := Value;
+end;
+
+procedure TTypedMetaField.SetVisible(const Value: Boolean);
+begin
+  FVisible := Value;
 end;
 
 { TBaseTableAttribute }
@@ -675,6 +693,13 @@ end;
 procedure TFunctionTableMeta.SetParameter(const aValue: Variant; const Index: Integer);
 begin
    Parameters[Index] := aValue;
+end;
+
+{ TPKMetaField }
+
+constructor TPKMetaField.Create(const aIsAutoInc: Boolean);
+begin
+  FIsAutoInc := aIsAutoInc;
 end;
 
 end.

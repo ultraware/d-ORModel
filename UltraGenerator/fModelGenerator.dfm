@@ -8,7 +8,7 @@ object frmModelGenerator: TfrmModelGenerator
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
-  Font.Name = 'Tahoma'
+  Font.Name = 'Segoe UI'
   Font.Style = []
   OldCreateOrder = False
   OnCreate = FormCreate
@@ -36,7 +36,7 @@ object frmModelGenerator: TfrmModelGenerator
     object lbl1: TLabel
       Left = 0
       Top = 0
-      Width = 35
+      Width = 185
       Height = 13
       Align = alTop
       Caption = 'Tables:'
@@ -65,7 +65,7 @@ object frmModelGenerator: TfrmModelGenerator
     object Label1: TLabel
       Left = 0
       Top = 0
-      Width = 31
+      Width = 185
       Height = 13
       Align = alTop
       Caption = 'Fields:'
@@ -94,7 +94,7 @@ object frmModelGenerator: TfrmModelGenerator
     object Label2: TLabel
       Left = 0
       Top = 0
-      Width = 32
+      Width = 408
       Height = 13
       Align = alTop
       Caption = 'Model:'

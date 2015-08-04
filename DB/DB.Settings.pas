@@ -53,6 +53,7 @@ type
    public
       class constructor Create;
       class destructor Destroy;
+      destructor Destroy; override;
 
       function GetDBConnection(const aName: string; aDBType: TDBConnectionType): TDBConfig;
       procedure AddDBConnection(aDBConnection: TDBConfig; OverrideCon: Boolean = False);
@@ -74,7 +75,7 @@ type
    public
       class constructor Create;
       class destructor Destroy;
-
+      destructor Destroy; override;
       class procedure RegisterDBSettingsClass(aDBType: TDBConnectionType; aSettingsClass: TDBConnectionSettingsClass);
    published
       property Name: string read FName write FName;
@@ -107,6 +108,11 @@ end;
 class destructor TDBConfig.Destroy;
 begin
    FDBSettingsClasses.Free;
+end;
+
+destructor TDBConfig.Destroy;
+begin
+  inherited;
 end;
 
 class procedure TDBConfig.RegisterDBSettingsClass(aDBType: TDBConnectionType; aSettingsClass: TDBConnectionSettingsClass);
@@ -142,6 +148,11 @@ end;
 class constructor TDBSettings.Create;
 begin
    FInstance := TDBSettings.Create;
+end;
+
+destructor TDBSettings.Destroy;
+begin
+  inherited;
 end;
 
 class destructor TDBSettings.Destroy;

@@ -45,6 +45,7 @@ type
     class procedure Connect    (aDBConnection: DB.Settings.TDBConfig = nil);
     class function  TryConnect (aDBConnection: DB.Settings.TDBConfig      ): boolean;
     class function  IsConnected(aDBConnection: DB.Settings.TDBConfig = nil): boolean;
+    class procedure AddConnection(aDBConnection: DB.Settings.TDBConfig = nil);
 
     class property OnSQLExecuting: TSQLExecutingEvent read GetOnSQLExecuting write SetOnSQLExecuting;
     class property OnSQLExecuted : TSQLExecutedEvent  read GetOnSQLExecuted  write SetOnSQLExecuted;
@@ -56,6 +57,26 @@ uses
   SysUtils, DB.ConnectionPool;
 
 { TDBConnector }
+
+class procedure TDBConnector.AddConnection(
+  aDBConnection: DB.Settings.TDBConfig);
+var
+  conclass: TBaseConnectionClass;
+  con: TBaseConnection;
+begin
+  Assert(not IsConnected(aDBConnection));
+
+  con := nil;
+  conclass := TBaseConnection.GetDBConnectionClass(aDBConnection.DBType);
+  Assert(conclass <> nil);
+  try
+    con := conclass.Create(aDBConnection);
+    //con.Open;
+    TDBConnectionPool.PutConnectionToPool(aDBConnection, con);
+  except
+    con.Free;
+  end;
+end;
 
 class procedure TDBConnector.Connect(aDBConnection: DB.Settings.TDBConfig = nil);
 var

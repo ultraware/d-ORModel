@@ -52,9 +52,6 @@ type
     class procedure CreateAndShowModal;
   end;
 
-var
-  frmModelGenerator: TfrmModelGenerator;
-
 implementation
 
 uses

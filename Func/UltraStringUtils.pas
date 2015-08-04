@@ -20,6 +20,8 @@ type
    function RTrim(const S: string; Char: string =  ' '): string;
    function StringIn(const ZoekStr, InStr: string; CaseSensitive: Boolean = False; Separator: Char = ','): Boolean;
 
+   function Capitalize(Str: string; LowerRest: Boolean = False): string;
+
    function QryBoolToStr(Value: Boolean): string;
 
    function RoundF(const Value: Currency): Currency; overload;

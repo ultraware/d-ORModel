@@ -3,16 +3,17 @@ object frmMain: TfrmMain
   Top = 0
   Caption = 'UltraGenerator'
   ClientHeight = 351
-  ClientWidth = 774
+  ClientWidth = 882
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -11
-  Font.Name = 'Tahoma'
+  Font.Name = 'Segoe UI'
   Font.Style = []
   OldCreateOrder = False
   WindowState = wsMaximized
   OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
   PixelsPerInch = 96
   TextHeight = 13
   object spl1: TSplitter
@@ -23,7 +24,7 @@ object frmMain: TfrmMain
   object Panel1: TPanel
     Left = 0
     Top = 0
-    Width = 774
+    Width = 882
     Height = 33
     Align = alTop
     BevelOuter = bvNone
@@ -81,6 +82,15 @@ object frmMain: TfrmMain
       TabOrder = 5
       OnClick = btnDepsClick
     end
+    object btnDBSettings: TButton
+      Left = 728
+      Top = 2
+      Width = 113
+      Height = 25
+      Caption = 'Database settings'
+      TabOrder = 6
+      OnClick = btnDBSettingsClick
+    end
   end
   object pnl1: TPanel
     Left = 0
@@ -114,7 +124,7 @@ object frmMain: TfrmMain
   object pnl2: TPanel
     Left = 188
     Top = 33
-    Width = 586
+    Width = 694
     Height = 318
     Align = alClient
     BevelOuter = bvNone
@@ -122,16 +132,16 @@ object frmMain: TfrmMain
     object lblFields: TLabel
       Left = 0
       Top = 0
-      Width = 586
+      Width = 694
       Height = 13
       Align = alTop
       Caption = 'Fields:'
     end
     object grdFields: TStringGrid
       Left = 0
-      Top = 46
-      Width = 586
-      Height = 272
+      Top = 57
+      Width = 694
+      Height = 261
       Align = alClient
       Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goColSizing, goEditing]
       TabOrder = 0
@@ -156,28 +166,19 @@ object frmMain: TfrmMain
     object Panel2: TPanel
       Left = 0
       Top = 13
-      Width = 586
-      Height = 33
+      Width = 694
+      Height = 44
       Align = alTop
       BevelOuter = bvNone
       TabOrder = 2
       object btnGenerateTable: TButton
         Left = 4
-        Top = 4
+        Top = 7
         Width = 93
         Height = 25
         Caption = 'Generate table'
         TabOrder = 0
         OnClick = btnGenerateTableClick
-      end
-      object btnGenerateBO: TButton
-        Left = 100
-        Top = 4
-        Width = 93
-        Height = 25
-        Caption = 'Generate BO'
-        TabOrder = 1
-        OnClick = btnGenerateBOClick
       end
     end
     object cbbTypeCmbx: TComboBox
@@ -201,9 +202,22 @@ object frmMain: TfrmMain
       Height = 21
       DropDownCount = 20
       ItemIndex = 0
-      TabOrder = 4
+      TabOrder = 5
       Text = 'SkipDefault'
       OnSelect = cbbSkipDefaultSelect
+      Items.Strings = (
+        'SkipDefault')
+    end
+    object cbbVisible: TComboBox
+      Left = 438
+      Top = 224
+      Width = 145
+      Height = 21
+      DropDownCount = 20
+      ItemIndex = 0
+      TabOrder = 4
+      Text = 'SkipDefault'
+      OnSelect = cbbVisibleSelect
       Items.Strings = (
         'SkipDefault')
     end

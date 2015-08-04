@@ -1,34 +1,11 @@
-{***************************************************************************}
-{                                                                           }
-{           d'ORModel - Model based ORM for Delphi                          }
-{			https://github.com/ultraware/d-ORModel							}
-{           Copyright (C) 2013-2014 www.ultraware.nl                        }
-{                                                                           }
-{***************************************************************************}
-{                                                                           }
-{  Licensed under the Apache License, Version 2.0 (the "License");          }
-{  you may not use this file except in compliance with the License.         }
-{  You may obtain a copy of the License at                                  }
-{                                                                           }
-{      http://www.apache.org/licenses/LICENSE-2.0                           }
-{                                                                           }
-{  Unless required by applicable law or agreed to in writing, software      }
-{  distributed under the License is distributed on an "AS IS" BASIS,        }
-{  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. }
-{  See the License for the specific language governing permissions and      }
-{  limitations under the License.                                           }
-{                                                                           }
-{***************************************************************************}
 unit fMain;
 
 interface
 
 uses
-  Generics.Collections, IOUtils, UITypes,
-  Windows, Messages, SysUtils, Variants, Classes, Graphics,
+  Generics.Collections, ComCtrls, Vcl.Grids, Windows, SysUtils, Classes,
   Controls, Forms, Dialogs, StdCtrls, ExtCtrls,
-  Meta.Data, Data.CRUDSettings,
-  ComCtrls, Vcl.Grids;
+  Meta.Data, Data.CRUDSettings;
 
 type
   TTableDependencies = class(TObjectDictionary<TCRUDTable, TList<TCRUDTable>>);
@@ -51,68 +28,63 @@ type
     btnGenerateTable: TButton;
     Button1: TButton;
     btnDeps: TButton;
-    btnGenerateBO: TButton;
     cbbTypeCmbx: TComboBox;
     cbbSkipDefault: TComboBox;
+    cbbVisible: TComboBox;
+    btnDBSettings: TButton;
     procedure btnLoadTablesClick(Sender: TObject);
     procedure btnGenerateClick(Sender: TObject);
     procedure pnl1Resize(Sender: TObject);
-    procedure grdTablesSelectCell(Sender: TObject; ACol, ARow: Integer;
-      var CanSelect: Boolean);
-    procedure grdFieldsSelectCell(Sender: TObject; ACol, ARow: Integer;
-      var CanSelect: Boolean);
-    procedure grdFieldsSetEditText(Sender: TObject; ACol, ARow: Integer;
-      const Value: string);
+    procedure grdTablesSelectCell(Sender: TObject; ACol, ARow: Integer; var CanSelect: Boolean);
+    procedure grdFieldsSelectCell(Sender: TObject; ACol, ARow: Integer; var CanSelect: Boolean);
+    procedure grdFieldsSetEditText(Sender: TObject; ACol, ARow: Integer; const Value: string);
     procedure cmbxCustomTypeSelect(Sender: TObject);
     procedure btnSaveXMLClick(Sender: TObject);
     procedure btnGenerateTableClick(Sender: TObject);
     procedure Button1Click(Sender: TObject);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
     procedure btnDepsClick(Sender: TObject);
-    procedure btnGenerateBOClick(Sender: TObject);
     procedure cbbTypeCmbxSelect(Sender: TObject);
-    procedure grdFieldsGetEditText(Sender: TObject; ACol, ARow: Integer;
-      var Value: string);
+    procedure grdFieldsGetEditText(Sender: TObject; ACol, ARow: Integer; var Value: string);
     procedure cbbSkipDefaultSelect(Sender: TObject);
+    procedure cbbVisibleSelect(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+    procedure btnDBSettingsClick(Sender: TObject);
   private
-    class var FOutputCRUDPath: string;
-    class var FOutputBOPath: string;
-//    FTables: TObjectDictionary<string, TTableModel>;
+    function CurrentTable: TCRUDTable;
+    function CurrentField: TCRUDField;
     procedure FillFieldsForTable(const aTable: TCRUDTable);
-    function  GenerateCRUDForTable(const aTable: TCRUDTable): string;
-    function  GenerateMetaForTable(const aTable: TCRUDTable): string;
-    function  GenerateCustomMetaTypesOfAllTables: TStrings;
 
     function  GetTablesWithCircularDeps: TTableDependencies;
     procedure InitCircularDepsFix;
 
     procedure LoadFields(aTbl: TCRUDTable);
-    function GenerateBOForTable(const aTable: TCRUDTable): string;
+    procedure DoGenerateTable(const t: TCRUDTable; const Silent: Boolean = False);
   public
     procedure  AfterConstruction; override;
-    destructor Destroy; override;
 
-    class property OutputCRUDPath: string read FOutputCRUDPath write FOutputCRUDPath;
-    class property OutputBOPath: string read FOutputBOPath write FOutputBOPath;
+    function AddTable(const aTablename: string; const aIsDataBaseTable: Boolean = True; const aParameterCount: Integer = 0): TCRUDTable;
   end;
 
   TAutomaticCustomTypeList = class(TDictionary<string,string>);
 
 var
   frmMain: TfrmMain;
-  AutoCustomTypes: TAutomaticCustomTypeList;
+  FieldNameCustomTypesDict: TAutomaticCustomTypeList;
+  FKTablenameCustomTypesDict: TAutomaticCustomTypeList;
+  FieldNameDisplayNameDict: TAutomaticCustomTypeList;
 
 implementation
 
 uses
-  TypInfo, Math,
-  DB.ConnectionPool, DB.Connection, Data.DataRecord,
-  ADODB, DB, StrUtils, Data.CustomTypes, fModelGenerator, uGenerator,
-  uMetaLoader, DB.Connection.SQLServer, DB.Settings, System.MaskUtils;
+  TypInfo, ADODB, StrUtils, System.MaskUtils, UITypes,
+  DB.ConnectionPool, Data.DataRecord, DB.Connection.SQLServer, DB.Settings,
+  UltraStringUtils, fModelGenerator, uGenerator, uMetaLoader,
+  fDBSettings, DB.Settings.SQLServer;
 
-type TGridField = (cFld_Fieldname, cFld_Type, cFld_CustomType, cFld_Required, cFld_MinValue, cFld_MaxValue, cFld_Displaylabel, cFld_DisplayFormat, cFld_DisplayWidth, cFld_EditFormat, cFld_EditMask, cFld_FKTable, cFld_FK_Field, cFld_SkipDefault);
-const C_GridFieldIndex: array[TGridField] of Integer = (0,1,2,3,4,5,6,7,8,9,10,11,12,13);
-      C_GridFieldName:  array[TGridField] of string = ('FieldName','Type','CustomType','Required','MinValue','MaxValue','Displaylabel','DisplayFormat','Displaywidth','EditFormat','EditMask','ForeignKeyTable','ForeignKeyField','SkipDefault');
+type TGridField = (cFld_Fieldname, cFld_Type, cFld_CustomType, cFld_Stamsoort, cFld_Required, cFld_MinValue, cFld_MaxValue, cFld_Displaylabel, cFld_DisplayFormat, cFld_DisplayWidth, cFld_EditFormat, cFld_EditMask, cFld_FKTable, cFld_FK_Field, cFld_SkipDefault, cFld_SVisible);
+const C_GridFieldIndex: array[TGridField] of Integer = (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15);
+      C_GridFieldName:  array[TGridField] of string = ('FieldName','Type','CustomType','Stamsoort','Required','MinValue','MaxValue','Displaylabel','DisplayFormat','Displaywidth','EditFormat','EditMask','ForeignKeyTable','ForeignKeyField','SkipDefault', 'Visible');
 
 {$R *.dfm}
 
@@ -126,26 +98,42 @@ begin
 
   btnLoadTables.Click;
   grdTables.Row := 1;
-  tbl := grdTables.Objects[0, grdTables.Row] as TCRUDTable;
-  LoadFields(tbl);
+  LoadFields(CurrentTable);
 
   cmbxCustomType.Items.Clear;
   cmbxCustomType.Items.Add('');
   for i := 0 to TRegisteredCustomFields.Count-1 do
     cmbxCustomType.Items.Add( TRegisteredCustomFields.Item[i].ClassName );
 
+   // Alle IDs toevoegen aan customtypes zodat views deze ook kunnen gebruiken, daar worden geen foreign keys gevonden
+   cmbxCustomType.Items.Add('');
+   for tbl in CRUDSettings.Tables do
+   begin
+      if tbl.IsDataBaseTable then
+         cmbxCustomType.Items.Add(Format('TTyped%s_IDField', [tbl.TableName]));
+   end;
+
   cbbTypeCmbx.Items.Clear;
-  for FType := Low(Meta.Data.TFieldType) to High(Meta.Data.TFieldType) do
+   for FType := low(Meta.Data.TFieldType) to high(Meta.Data.TFieldType) do
     cbbTypeCmbx.Items.Add(TypInfo.GetEnumName(TypeInfo(Meta.Data.TFieldType), Ord(FType) ));
+//    cbbTypeCmbx.Items.Add(C_FieldTypeName[FType]);
 
   cbbSkipDefault.Items.Clear;
   cbbSkipDefault.Items.Add('True');
   cbbSkipDefault.Items.Add('False');
+
+   cbbVisible.Items.Clear;
+   cbbVisible.Items.Add('True');
+   cbbVisible.Items.Add('False');
+
+//  cmbxCustomType.Height     := grdFields.DefaultRowHeight + 2;
+//  cmbxCustomType.ItemHeight := grdFields.DefaultRowHeight;
 end;
 
-destructor TfrmMain.Destroy;
+procedure TfrmMain.btnDBSettingsClick(Sender: TObject);
 begin
-  inherited;
+   if TDBSettingsFrm.CreateAndShowModal then
+      btnLoadTablesClick(Sender);
 end;
 
 procedure TfrmMain.btnDepsClick(Sender: TObject);
@@ -176,53 +164,14 @@ begin
   end;
 end;
 
-procedure TfrmMain.btnGenerateBOClick(Sender: TObject);
-var
-  t: TCRUDTable;
-  sdir, sfile,
-  sdata: string;
-begin
-   t := grdTables.Objects[0, grdTables.Row] as TCRUDTable;
-
-   btnGenerateBO.Enabled := False;
-   try
-      if TfrmMain.OutputBOPath = '' then
-         TfrmMain.OutputBOPath := ExtractFilePath(Application.ExeName) + 'CRUDs\';
-      sdir := TfrmMain.OutputBOPath;
-      ForceDirectories(sdir);
-
-      sfile := sdir + 'BO.' + t.TableNameDelphi + '.pas';
-      if FileExists(sfile) then
-         ShowMessage(sfile + 'bestaat al.'+#13#10+'BO wordt niet aangemaakt.')
-      else
-      begin
-         sdata := GenerateBOForTable(t);
-         TFile.WriteAllText(sfile, sdata);
-      end;
-   finally
-      btnGenerateBO.Enabled := True;
-   end;
-end;
-
 procedure TfrmMain.btnGenerateClick(Sender: TObject);
-var
-  t: TCRUDTable;
-  sdir, sfile,
-  sdata, smodel: string;
-  strCustomTypes: TStrings;
+var t: TCRUDTable;
 begin
   pbGenerate.Position := 0;
   pbGenerate.Visible  := True;
   btnGenerate.Enabled := False;
-  strCustomTypes      := nil;
   try
     Self.Update;
-    if TfrmMain.OutputCRUDPath = '' then
-      TfrmMain.OutputCRUDPath := ExtractFilePath(Application.ExeName) + 'CRUDs\';
-    sdir := TfrmMain.OutputCRUDPath;
-    ForceDirectories(sdir);
-
-    InitCircularDepsFix;
 
     pbGenerate.Max  := CRUDSettings.TableCount;
     pbGenerate.Step := 1;
@@ -240,88 +189,61 @@ begin
          continue;
       end;
 
-      if TGenerator.TablesWithSeperateModels.IndexOf(t.TableName) >= 0 then
-      begin
-        sdata := TGenerator.GenerateCRUDForTable(t, smodel);
-        sfile := sdir + 'CRUD.' + t.TableName + '.pas';
-        TFile.WriteAllText(sfile, sdata);
-        sfile := sdir + 'Model.' + t.TableName + '.pas';
-        TFile.WriteAllText(sfile, smodel);
-      end
-      else
-      begin
-        sdata := GenerateCRUDForTable(t);
-        sfile := sdir + 'CRUD.' + t.TableName + '.pas';
-        TFile.WriteAllText(sfile, sdata);
-      end;
-
-      sdata := GenerateMetaForTable(t);
-      sfile := sdir + 'Meta.' + t.TableName + '.pas';
-      TFile.WriteAllText(sfile, sdata);                   //todo: put "shared" metadata in seperate dir (for sharing between client and server without using/sharing cruds with client)
+      DoGenerateTable(t, True { Silent } );
     end;
-
-    strCustomTypes := GenerateCustomMetaTypesOfAllTables;
-    sfile := sdir + 'Meta.CustomIDTypes.pas';
-    strCustomTypes.SaveToFile(sfile);
+    // Custom ID types updaten
+    TGenerator.GenerateCustomMetaTypesOfAllTables;
   finally
-    strCustomTypes.Free;
+
     pbGenerate.Visible := False;
     btnGenerate.Enabled := True;
   end;
 end;
 
-procedure TfrmMain.btnGenerateTableClick(Sender: TObject);
-var
-  t: TCRUDTable;
-  sdir, sfile,
-  sdata, smodel: string;
+procedure TfrmMain.DoGenerateTable(const t: TCRUDTable; const Silent: Boolean = False);
 begin
-  t := grdTables.Objects[0, grdTables.Row] as TCRUDTable;
+   TGenerator.GenerateCRUDForTable(t);
+   TGenerator.GenerateMetaForTable(t);
+   if TGenerator.TablesWithSeperateModels.IndexOf(t.TableName) >= 0 then
+     //if t.TableName = 'Relatie_T' then
+     TGenerator.GenerateModelForTable(t);
+end;
 
+procedure TfrmMain.btnGenerateTableClick(Sender: TObject);
+begin
   btnGenerateTable.Enabled := False;
   try
-    if TfrmMain.OutputCRUDPath = '' then
-      TfrmMain.OutputCRUDPath := ExtractFilePath(Application.ExeName) + 'CRUDs\';
-    sdir := TfrmMain.OutputCRUDPath;
-    ForceDirectories(sdir);
-
-    if TGenerator.TablesWithSeperateModels.IndexOf(t.TableName) >= 0 then
-    //if t.TableName = 'Relatie_T' then
-    begin
-      sdata := TGenerator.GenerateCRUDForTable(t, smodel);
-      sfile := sdir + 'CRUD.' + t.TableNameDelphi + '.pas';
-      TFile.WriteAllText(sfile, sdata);
-      sfile := sdir + 'Model.' + t.TableNameDelphi + '.pas';
-      TFile.WriteAllText(sfile, smodel);
-    end
-    else
-    begin
-      sdata := GenerateCRUDForTable(t);
-      sfile := sdir + 'CRUD.' + t.TableNameDelphi + '.pas';
-      TFile.WriteAllText(sfile, sdata);
-    end;
-
-    sdata := GenerateMetaForTable(t);
-    sfile := sdir + 'Meta.' + t.TableNameDelphi + '.pas';
-    TFile.WriteAllText(sfile, sdata);                   //todo: put "shared" metadata in seperate dir (for sharing between client and server without using/sharing cruds with client)
-
-    with GenerateCustomMetaTypesOfAllTables do
-    begin
-      sfile := sdir + 'Meta.CustomIDTypes.pas';
-      SaveToFile(sfile);
-      Free;
-    end;
+      DoGenerateTable(CurrentTable);
+      // Custom IDs updaten
+      TGenerator.GenerateCustomMetaTypesOfAllTables;
   finally
     btnGenerateTable.Enabled := True;
   end;
 end;
 
 procedure TfrmMain.btnLoadTablesClick(Sender: TObject);
+   procedure StartLoading;
+   var sTbl: TCRUDTable;
+    begin
+      for sTbl in CRUDSettings.Tables do
+         sTbl.Exists := False;
+    end;
+
+   procedure FinishLoading;
+   var sTbl: TCRUDTable;
+   begin
+      for sTbl in CRUDSettings.Tables do
+    begin
+         if (not sTbl.Exists) then
+            CRUDSettings.DeleteTable(sTbl);
+    end;
+      InitCircularDepsFix; // altijd doen, anders een individueel gemaakte CRUD soms anders dan als ze allemaal gemaakt worden
+  end;
+
 var
   connection: TBaseADOConnection;
   mssql: TMSSQLConnection;
   ds: TADODataSet;
-  tbl: TCRUDTable;
   dbconn: TDBConfig;
 begin
   grdTables.RowCount  := 1;
@@ -330,53 +252,87 @@ begin
   grdTables.FixedRows := 1;
 
   dbconn := TDBSettings.Instance.GetDBConnection('', dbtNone);  //get specific settings or first in case no dbtype etc
-  connection := TDBConnectionPool.GetConnectionFromPool(dbconn) as TBaseADOConnection;
+   Connection := TDBConnectionPool.GetConnectionFromPool(dbconn) as TBaseADOConnection;
+  //connection := TDBConnectionPool.GetConnectionFromPool as TBaseADOConnection;
   try
-    Assert(connection is TMSSQLConnection);
-    mssql := (connection as TMSSQLConnection);
+      Assert(Connection is TMSSQLConnection);
+      mssql := (Connection as TMSSQLConnection);
+    connection.Open;
 
-    ds := TADODataset.Create(nil);
+      Self.Caption := Format('Generator for: Server = %s - DB = %s',[mssql.ServerName,mssql.DataBase]);
+
+      ds := TADODataSet.Create(nil);
     try
       ds.Close;
-      if mssql.IsSQLServerCE then
-      begin
+      //mssql.Connection.DefaultDatabase := 'CompendaTest';
+         // if mssql.IsSQLServerCE then
+         // begin
         //strange, does not work with SQL CE
         with TADOCommand.Create(nil) do
         try
           ConnectionString := mssql.ADOConnection.ConnectionString;
-          CommandText := 'SELECT TABLE_TYPE, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES';
+               if mssql.IsSQLServerCE then
+                  CommandText := 'SELECT TABLE_TYPE, TABLE_NAME, 0 as PARAMETERCOUNT '+
+                     'FROM INFORMATION_SCHEMA.TABLES'
+               else
+                  CommandText := 'SELECT TABLE_TYPE, TABLE_NAME, 0 as PARAMETERCOUNT  '+
+                     'FROM INFORMATION_SCHEMA.TABLES ' +
+                     'UNION ALL '+
+                     'SELECT ''FUNCTION'', O.NAME, COUNT(P.OBJECT_ID) '+
+                     'FROM SYS.OBJECTS O ' +
+                        'INNER JOIN SYS.PARAMETERS p ON (O.OBJECT_ID = P.OBJECT_ID) ' +
+                     'WHERE O.TYPE in (''IF'',''TF'') ' +
+                     'GROUP BY O.NAME ' +
+                     'ORDER BY TABLE_NAME';
+
+               // CommandText := 'SELECT ''FUNCTION'' as TABLE_TYPE, name as TABLE_NAME FROM sys.objects   WHERE type in (''IF'',''TF'')';
           ds.Recordset := Execute;
         finally
           Free;
-        end
-      end
-      else
-        mssql.ADOConnection.OpenSchema(siTables, EmptyParam, EmptyParam, ds);
+            end;
+         // end
+         // else
+         // mssql.ADOConnection.OpenSchema(siTables, EmptyParam, EmptyParam, ds);
 
       ds.First;
+         StartLoading;
       while not ds.Eof do
       begin
-        if (ds.FieldByName('TABLE_TYPE').AsString = 'TABLE') or
-           (ds.FieldByName('TABLE_TYPE').AsString = 'VIEW') then
+        // <z:row TABLE_CATALOG='prdIE' TABLE_SCHEMA='dbo' TABLE_NAME='vrdMutatieExport' TABLE_TYPE='TABLE' DATE_CREATED='2008-04-11T15:43:46'/>
+            if StringIn(ds.FieldByName('TABLE_TYPE').AsString, 'BASE TABLE,TABLE,VIEW,FUNCTION') then
         begin
-          tbl := CRUDSettings.FindTable(ds.FieldByName('TABLE_NAME').AsString, True{auto create});
-          tbl.TableName  := ds.FieldByName('TABLE_NAME').AsString;
-
-          grdTables.Cells  [0, grdTables.RowCount-1] := ds.FieldByName('TABLE_NAME').AsString;
-          grdTables.Objects[0, grdTables.RowCount-1] := tbl;
-          grdTables.RowCount := grdTables.RowCount + 1;
+               AddTable(ds.FieldByName('TABLE_NAME').AsString, StringIn(ds.FieldByName('TABLE_TYPE').AsString, 'BASE TABLE,TABLE'),
+                  ds.FieldByName('PARAMETERCOUNT').AsInteger);
         end;
 
         ds.Next;
       end;
+         if Assigned(TGeneratorSettings.OnCreateTempTableDefs) then
+            TGeneratorSettings.OnCreateTempTableDefs();
+         FinishLoading;
     finally
       ds.Free;
     end;
   finally
-    TDBConnectionPool.PutConnectionToPool(dbconn, connection);
+      TDBConnectionPool.PutConnectionToPool(dbconn, Connection);
   end;
 
   grdTables.RowCount := grdTables.RowCount - 1;
+end;
+
+function TfrmMain.AddTable(const aTablename: string; const aIsDataBaseTable: Boolean = True; const aParameterCount: Integer = 0): TCRUDTable;
+begin
+   //tbl := TCRUDTable.Create;
+   Result := CRUDSettings.FindTable(aTablename, True{auto create});
+   //tbl.Database   := mssql.ADOConnection.DefaultDatabase;
+   Result.TableFunctionParameterCount := aParameterCount;
+   Result.IsDataBaseTable := aIsDataBaseTable;
+   Result.CanLoadFromDB := True;
+   Result.Exists := True;
+
+   grdTables.Cells  [0, grdTables.RowCount-1] := aTablename;
+   grdTables.Objects[0, grdTables.RowCount-1] := Result;
+   grdTables.RowCount := grdTables.RowCount + 1;
 end;
 
 procedure TfrmMain.btnSaveXMLClick(Sender: TObject);
@@ -390,30 +346,37 @@ begin
 end;
 
 procedure TfrmMain.cbbSkipDefaultSelect(Sender: TObject);
-var
-  f: TCRUDField;
 begin
-  f := grdFields.Objects[0, grdFields.Row] as TCRUDField;
-  f.SkipDefault := StrToBoolDef(cbbSkipDefault.Text, False);
+   CurrentField.SkipDefault := StrToBoolDef(cbbSkipDefault.Text, False);
   grdFields.Cells[grdFields.Col, grdFields.Row] := cbbSkipDefault.Text;
 end;
 
 procedure TfrmMain.cbbTypeCmbxSelect(Sender: TObject);
-var
-  f: TCRUDField;
 begin
-  f := grdFields.Objects[0, grdFields.Row] as TCRUDField;
-  f.FieldType := cbbTypeCmbx.Text;
+   CurrentField.FieldType := cbbTypeCmbx.Text;
   grdFields.Cells[grdFields.Col, grdFields.Row] := cbbTypeCmbx.Text;
 end;
 
-procedure TfrmMain.cmbxCustomTypeSelect(Sender: TObject);
-var
-  f: TCRUDField;
+procedure TfrmMain.cbbVisibleSelect(Sender: TObject);
 begin
-  f := grdFields.Objects[0, grdFields.Row] as TCRUDField;
-  f.CustomType := cmbxCustomType.Text;
+   CurrentField.Visible := StrToBoolDef(cbbVisible.Text, False);
+   grdFields.Cells[grdFields.Col, grdFields.Row] := cbbVisible.Text;
+end;
+
+procedure TfrmMain.cmbxCustomTypeSelect(Sender: TObject);
+begin
+   CurrentField.CustomType := cmbxCustomType.Text;
   grdFields.Cells[grdFields.Col, grdFields.Row] := cmbxCustomType.Text;
+end;
+
+function TfrmMain.CurrentTable: TCRUDTable;
+begin
+   Result := grdTables.Objects[0, grdTables.Row] as TCRUDTable
+end;
+
+function TfrmMain.CurrentField: TCRUDField;
+begin
+   Result := grdFields.Objects[0, grdFields.Row] as TCRUDField;
 end;
 
 procedure TfrmMain.FillFieldsForTable(const aTable: TCRUDTable);
@@ -429,29 +392,32 @@ begin
       CanClose := True;
       btnSaveXML.Click;
     end;
-    mrNo : CanClose := True;
-    mrCancel: Abort;
+      mrNo:
+         CanClose := True;
+      mrCancel:
+         Abort;
   end;
 end;
 
-function TfrmMain.GenerateCRUDForTable(const aTable: TCRUDTable): string;
+procedure TfrmMain.FormCreate(Sender: TObject);
 begin
-  Result := TGenerator.GenerateCRUDForTable(aTable);
-end;
-
-function TfrmMain.GenerateBOForTable(const aTable: TCRUDTable): string;
-begin
-  Result := TGenerator.GenerateBOForTable(aTable);
-end;
-
-function TfrmMain.GenerateCustomMetaTypesOfAllTables: TStrings;
-begin
-  Result := TGenerator.GenerateCustomMetaTypesOfAllTables;
-end;
-
-function TfrmMain.GenerateMetaForTable(const aTable: TCRUDTable): string;
-begin
-  Result := TGenerator.GenerateMetaForTable(aTable);
+   inherited;
+   
+   with CRUDSettings.DB do
+   begin
+      if ((Server <> '') and (DB <> '')) then
+         //EndsText('.sdf', Server) then       also needs to store CE type!
+      begin
+         try
+            AddSQLDatabaseSettings(Server, DB, DBUser, DBPwd)
+         Except
+            // als connectie niet gevonden kan worden met instellingen, dan instellingen maar wijzigen
+            btnDBSettingsClick(Sender);
+         end;
+      end
+      else
+         btnDBSettingsClick(Sender);
+   end;
 end;
 
 procedure TfrmMain.grdFieldsGetEditText(Sender: TObject; ACol, ARow: Integer; var Value: string);
@@ -463,10 +429,7 @@ begin
    end;
 end;
 
-procedure TfrmMain.grdFieldsSelectCell(Sender: TObject; ACol, ARow: Integer;
-  var CanSelect: Boolean);
-var
-  f: TCRUDField;
+procedure TfrmMain.grdFieldsSelectCell(Sender: TObject; ACol, ARow: Integer; var CanSelect: Boolean);
 
   procedure SelectWithCombo(cmb: TComboBox; InitValue: string);
   var r: TRect;
@@ -481,31 +444,34 @@ var
     cmb.Width   := r.Width;
   end;
 
+var f: TCRUDField;
 begin
   CanSelect := False;
   cmbxCustomType.Visible := False;
   cbbTypeCmbx.Visible := False;
   cbbSkipDefault.Visible := False;
-  f := grdFields.Objects[0, ARow] as TCRUDField;
+   cbbVisible.Visible := False;
+   f := CurrentField;
 
   case TGridField(ACol) of
+//     cFld_Fieldname: ;
      cFld_Type:
         SelectWithCombo(cbbTypeCmbx, f.FieldType);
      cFld_CustomType:
+         begin
+            if (not(f.IsPK or f.IsFK)) then
         SelectWithCombo(cmbxCustomType, f.CustomType);
-     cFld_MinValue,
-     cFld_MaxValue,
-     cFld_Displaylabel,
-     cFld_DisplayFormat,
-     cFld_DisplayWidth,
-     cFld_EditFormat,
-     cFld_EditMask:
+         end;
+//     cFld_Requiered: ;
+      cFld_MinValue, cFld_MaxValue, cFld_Displaylabel, cFld_DisplayFormat, cFld_DisplayWidth, cFld_EditFormat, cFld_EditMask:
          CanSelect := True;
      cFld_SkipDefault:
      begin
        if f.HasDefault then
           SelectWithCombo(cbbSkipDefault, IfThen(f.SkipDefault, 'True', 'False'));
      end;
+      cFld_SVisible:
+         SelectWithCombo(cbbVisible, IfThen(f.Visible, 'True', 'False'));
   end;
 
   if not CanSelect then
@@ -513,6 +479,7 @@ begin
     grdFields.OnSelectCell := nil;
     grdFields.Row          := ARow;
     grdFields.Col          := C_GridFieldIndex[cFld_Displaylabel];
+//    grdFields.Col          := 0;
     grdFields.OnSelectCell := grdFieldsSelectCell;
   end;
 end;
@@ -523,9 +490,10 @@ var
   f: TCRUDField;
   s: string;
 begin
-  f := grdFields.Objects[0, ARow] as TCRUDField;
+   f := CurrentField;
 
   case TGridField(ACol) of
+//     cFld_Fieldname: ;
      cFld_Type:
          f.FieldType := Value;
      cFld_CustomType:
@@ -574,13 +542,9 @@ begin
   end;
 end;
 
-procedure TfrmMain.grdTablesSelectCell(Sender: TObject; ACol, ARow: Integer;
-  var CanSelect: Boolean);
-var
-  tbl: TCRUDTable;
+procedure TfrmMain.grdTablesSelectCell(Sender: TObject; ACol, ARow: Integer; var CanSelect: Boolean);
 begin
-  tbl := grdTables.Objects[0, ARow] as TCRUDTable;
-  LoadFields(tbl);
+   LoadFields(grdTables.Objects[0, ARow] as TCRUDTable); // niet current-table, die wordt nu juist anders :)
 end;
 
 procedure TfrmMain.InitCircularDepsFix;
@@ -592,7 +556,7 @@ begin
   try
     for t in deps.Keys do
     begin
-      if TGenerator.TablesWithSeperateModels.IndexOf(t.TableName) < 0 then
+         if (TGenerator.TablesWithSeperateModels.IndexOf(t.TableName) < 0) then
         TGenerator.TablesWithSeperateModels.Add(t.TableName);
     end;
   finally
@@ -608,14 +572,16 @@ var
 begin
   lblFields.Caption := 'Fields of: none';
   grdFields.RowCount  := 1;
-
-  if aTbl = nil then Exit;
+   if aTbl = nil then
+      Exit;
   lblFields.Caption := 'Fields of: ' + aTbl.TableName;
-
+  
   grdFields.RowCount  := 1;
   grdFields.FixedCols := 0;
   grdFields.ColCount  := Length(C_GridFieldIndex);
+//  grdFields.OnSelectCell := nil;
 
+  //if aTbl.FieldCount = 0 then
   FillFieldsForTable(aTbl);  //refresh
   grdFields.RowCount := aTbl.FieldCount + 1; //grdFields.FixedRows;
   grdFields.Row      := 0; //grdFields.FixedRows;
@@ -624,37 +590,54 @@ begin
   begin
     grdFields.Row := grdFields.Row + 1;
 
-    row := grdFields.Rows[grdFields.Row];
-    row.Clear;
-    row.AddObject(f.FieldName, f);
-    row.Add( f.FieldType  );
-    if (f.CustomType = '') and AutoCustomTypes.ContainsKey(f.FieldName)then
-      f.CustomType := AutoCustomTypes.Items[f.FieldName];
+      Row := grdFields.Rows[grdFields.Row];
+      Row.Clear;
+    //row.Add('');
+      Row.AddObject(f.FieldName, f);
+    //row.Add( TypInfo.GetEnumName(TypeInfo(TFieldType), ORd(f.FieldType) ) );
+      Row.Add(f.FieldType);
+      if (f.CustomType = '') and FieldNameCustomTypesDict.ContainsKey(f.FieldName) then // MutatieDatum -> TTypedMutatieDateTimeField
+         f.CustomType := FieldNameCustomTypesDict.Items[f.FieldName];
+      if (f.CustomType = '') and f.IsFK and FKTablenameCustomTypesDict.ContainsKey(f.FKTable) then // xxStam_T_ID -> TTypedStam_IDField
+         f.CustomType := FKTablenameCustomTypesDict.Items[f.FKTable];
+      if SameText(f.FieldName,'WebDB') then
+         f.Visible := False;
 
-    row.Add( f.CustomType );
-    row.Add(BoolToStr(f.Required, True));
+      Row.Add(f.CustomType);
+      Row.Add(BoolToStr(f.Required, True));
+//    row.Add(f.DefaultValue);
+    //if f.StringSize > 0 then
+    //  row.Add(IntToStr(f.StringSize))
+    //else
+    //  row.Add('');
     if f.MaxValue > 0 then       //maxvalue filled? then show minvalue too
-      row.Add(FloatToStr(f.MinValue))
+         Row.Add(FloatToStr(f.MinValue))
     else
-      row.Add('');
+         Row.Add('');
     if f.MaxValue > 0 then
-      row.Add(FloatToStr(f.MaxValue))
+         Row.Add(FloatToStr(f.MaxValue))
     else
-      row.Add('');
-    if TGenerator.Vertaalbaar and (Trim(f.Displaylabel) = '') then
-      f.Displaylabel := f.FieldName; // voor vertalingen -> moet een displaywaarde ingevuld zijn
-    row.Add(f.Displaylabel);
-    row.Add(f.DisplayFormat);
+         Row.Add('');
+
+    if FieldNameDisplayNameDict.ContainsKey(f.FieldName) then
+       f.Displaylabel := FieldNameDisplayNameDict.Items[f.FieldName];
+    if TGeneratorSettings.Vertaalbaar and (Trim(f.Displaylabel) = '') then
+    f.Displaylabel := f.FieldName; // voor vertalingen -> moet een displaywaarde ingevuld zijn
+    Row.Add(f.Displaylabel);
+    Row.Add(f.DisplayFormat);
     if f.DisplayWidth > 0 then
-      row.Add(IntToStr(f.DisplayWidth))
+         Row.Add(IntToStr(f.DisplayWidth))
     else
-      row.Add('');
-    row.Add(f.EditFormat);
-    row.Add(f.EditMask);
-    row.Add(f.FKTable);
-    row.Add(f.FKField);
-    if f.HasDefault then
-       row.Add(IfThen(f.SkipDefault, 'True','False'));
+         Row.Add('');
+    Row.Add(f.EditFormat);
+    Row.Add(f.EditMask);
+    Row.Add(f.FKTable);
+    Row.Add(f.FKField);
+    if f.HasDefault then // anders dus een lege tekst
+       Row.Add(IfThen(f.SkipDefault, 'True', 'False'))
+    else
+       Row.Add('');
+    Row.Add(IfThen(f.Visible, 'True', 'False'));
   end;
 
   row := grdFields.Rows[0];
@@ -662,17 +645,24 @@ begin
   for GridField := Low(TGridField) to High(TGridField) do
   begin
     row.add(C_GridFieldName[GridField]);
-    grdFields.ColWidths[C_GridFieldIndex[GridField]] := 90;
+      grdFields.ColWidths[C_GridFieldIndex[GridField]] := 85;
   end;
 
-  grdFields.FixedRows := 1;
-  grdFields.ColWidths[C_GridFieldIndex[cFld_Fieldname]] := 150;
-  grdFields.ColWidths[C_GridFieldIndex[cFld_CustomType]] := 180;
-  grdFields.ColWidths[C_GridFieldIndex[cFld_Required]] := 80;
-  grdFields.ColWidths[C_GridFieldIndex[cFld_Displaylabel]] := 180;
+  if (grdFields.RowCount > 1) then
+  begin
+    grdFields.FixedRows := 1;
+    grdFields.ColWidths[C_GridFieldIndex[cFld_Fieldname]] := 150;
+    grdFields.ColWidths[C_GridFieldIndex[cFld_CustomType]] := 175;
+    grdFields.ColWidths[C_GridFieldIndex[cFld_Stamsoort]] := 175;
+    grdFields.ColWidths[C_GridFieldIndex[cFld_Required]] := 80;
+    grdFields.ColWidths[C_GridFieldIndex[cFld_Displaylabel]] := 175;
 
-  grdFields.OnSelectCell := grdFieldsSelectCell;
-  grdFields.Col          := C_GridFieldIndex[cFld_Displaylabel];
+    grdFields.OnSelectCell := grdFieldsSelectCell;
+    grdFields.Col          := C_GridFieldIndex[cFld_Displaylabel];
+   end
+   else
+      CRUDSettings.DeleteTable(atbl);
+//   Tabel verwijderen uit xml!, heeft geen velden dus zal wel niet meer bestan
 end;
 
 procedure TfrmMain.pnl1Resize(Sender: TObject);
@@ -688,14 +678,13 @@ var
   lst, lst2: TList<TCRUDTable>;
 
   procedure _GetAllDeps(aTable: TCRUDTable; var aDeps: TList<TCRUDTable>);
-  var
-    lst: TList<TCRUDTable>;
-    t: TCRUDTable;
+   var lst: TList<TCRUDTable>; t: TCRUDTable;
   begin
     lst := deps.Items[aTable];        //aTable = Relatie_T
     for t in lst do
     begin
-      if t = aTable then Continue;    //links to self are ok
+      if t = aTable then
+        continue; // links to self are ok
 
       if not aDeps.Contains(t) then   //t = Email
       begin
@@ -706,9 +695,7 @@ var
   end;
 
   procedure _AddDeps(aTable: TCRUDTable);
-  var
-    lst, lst2: TList<TCRUDTable>;
-    t2: TCRUDTable;
+   var lst, lst2: TList<TCRUDTable>; t2: TCRUDTable;
   begin
     lst2 := TList<TCRUDTable>.Create;
     try
@@ -744,7 +731,8 @@ begin
         if f.FKTable <> '' then
         begin
           t2 := CRUDSettings.FindTable(f.FKTable, False{no add});
-          if t2 = t then Continue;  //links to self are ok
+               if t2 = t then
+                  continue; // links to self are ok
           if t2 <> nil then
             if not lst.Contains(t2) then
               lst.Add(t2);
@@ -776,9 +764,13 @@ begin
 end;
 
 initialization
-   AutoCustomTypes  := TAutomaticCustomTypeList.Create;
+   FKTablenameCustomTypesDict := TAutomaticCustomTypeList.Create;
+   FieldNameCustomTypesDict   := TAutomaticCustomTypeList.Create;
+   FieldNameDisplayNameDict   := TAutomaticCustomTypeList.Create;
 
 finalization
-   AutoCustomTypes.Free;
+   FieldNameCustomTypesDict.Free;
+   FKTablenameCustomTypesDict.Free;
+   FieldNameDisplayNameDict.Free;
 
 end.

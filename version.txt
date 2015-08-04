@@ -1,0 +1,13 @@
+v1.1, 4-8-2015
+- fix for crud tdataset with bookmarks
+- Count, CountDistinct, Replace query functions
+- additional sql compare: InSet, NotInSet 
+- Collation in where statements
+- TSQLDateField, TSQLTimeField fields
+- autoinc and visible field properties
+- OnChange event for fields
+- no direct open of connections (so a windows service can be started without initial available connection)
+- connection retry and recover lost connection 
+- reuse open connection of the same thread (not first availble)
+- cleaner sql generation
+- $RTTI EXPLICIT handling, published instead of public is needed for fields in models

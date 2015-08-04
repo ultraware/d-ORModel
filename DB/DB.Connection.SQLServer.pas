@@ -41,13 +41,16 @@ type
     function GenerateConnectionString: string; virtual;abstract;
 
     function DirectExecuteData(const aSQL: string): _Recordset;
-    procedure HandleSQLError(aError: Exception);
+    procedure HandleSQLError(aError: Exception; aTryReconnect: boolean);
+  protected
+    procedure CheckCoinitialize;
   public
     procedure  AfterConstruction; override;
     destructor Destroy; override;
 
     function Clone: TBaseConnection; override;
 
+    function  IsOpen: Boolean; override;
     procedure Open;  override;
     procedure Close; override;
 
@@ -96,9 +99,9 @@ type
 implementation
 
 uses
-   Windows, Variants, StrUtils,
-   MWUtils,
-   DB.SQLBuilder, DB.Settings.SQLServer, System.Win.ComObj;
+   Windows, Variants, StrUtils, MWUtils, Math,
+   DB.SQLBuilder, DB.Settings.SQLServer, System.Win.ComObj, uExceptionHandling,
+   ADOInt, Winapi.ActiveX;
 
 var
   _Frequency: Int64;
@@ -124,10 +127,25 @@ begin
   FADOConnection := TADOConnection.Create(nil);
   FADOCommand    := TADOCommand.Create(nil);
   FADOCommand.Connection := FADOConnection;
+  FADOConnection.LoginPrompt := False;
+end;
+
+threadvar
+  _IsCoinitialized: boolean;
+
+procedure TBaseADOConnection.CheckCoinitialize;
+begin
+  if not _IsCoinitialized then
+  begin
+    CoInitialize(nil);
+    _IsCoinitialized := True;
+  end;
 end;
 
 function TBaseADOConnection.Clone: TBaseConnection;
 begin
+  CheckCoinitialize;
+
   Result := inherited Clone;
   (Result as TBaseADOConnection).ServerName := Self.ServerName;
   (Result as TBaseADOConnection).Applicatie := Self.Applicatie;
@@ -137,6 +155,7 @@ end;
 
 procedure TBaseADOConnection.Close;
 begin
+  FIsOpened := False;
   inherited;
   FADOConnection.Close;
 end;
@@ -153,6 +172,12 @@ begin
   Result := inherited IsInTransaction;
 end;
 
+function TBaseADOConnection.IsOpen: Boolean;
+begin
+  CheckCoinitialize;
+  Result := FADOConnection.Connected;
+end;
+
 function TBaseADOConnection.IsSQLServerCE: Boolean;
 begin
   Result := ContainsText(ADOConnection.ConnectionString, '.SQLSERVER.CE.');
@@ -160,14 +185,20 @@ end;
 
 procedure TBaseADOConnection.Open;
 begin
-  inherited;
+  CheckCoinitialize;
+  FIsOpened := False;
+
+  inherited Open;
   try
+    FADOConnection.Close;
     FADOConnection.ConnectionString := Self.GenerateConnectionString;
     FADOConnection.LoginPrompt      := False;
     FADOConnection.Open;
+
+    FIsOpened := True;
   except
       on e: Exception do
-        HandleSQLError(e);
+        HandleSQLError(e, false);
   end;
 end;
 
@@ -179,6 +210,7 @@ var
 begin
    FADOCommand.Connection := Self.FADOConnection;
 
+   if not IsOpen then Self.Open;
    sql := TSQLBuilder.GenerateCreateTableSQL(aTableModel, WithPrimaryKey, DropIfExists);
    FADOCommand.CommandText := SQL;
 
@@ -192,7 +224,7 @@ begin
       FADOCommand.Execute;
    except
       on e: Exception do
-         HandleSQLError(e);
+         HandleSQLError(e, false);
    end;
 
   QueryPerformanceCounter(iEnd);
@@ -216,6 +248,7 @@ var
   params: TVariantArray;
    iInputParams, i: Integer;
    Data: _Recordset;
+  iRetry: Integer;
 var
    iStart, iEnd: Int64;
 begin
@@ -223,6 +256,7 @@ begin
 
   sql := 'select count(*) from ('#13#10 + TSQLBuilder.GenerateSQL(FADOConnection.DefaultDatabase, aQuery, params, aMaxRecords) + #13#10 + ') as dummy';
 
+  if not IsOpen then Self.Open;
   FADOCommand.Connection := Self.FADOConnection;
 
   //fill params
@@ -262,12 +296,16 @@ begin
     OnSQLExecuting(sql, params);
   QueryPerformanceCounter(iStart);
 
+  for iRetry := 1 to 3 do
+  begin
   try
       Self.LastExecutedSQL := PreparedQueryToString(FADOCommand.CommandText, params);
       Data := FADOCommand.Execute(aRecordsAffected, EmptyParam);
+        Break;
   except
       on e: Exception do
-         HandleSQLError(e);
+           HandleSQLError(e, iRetry < 3);
+    end;
   end;
 
   QueryPerformanceCounter(iEnd);
@@ -289,6 +327,7 @@ var
   params: TVariantArray;
    iInputParams, i, icount: Integer;
    iStart, iEnd: Int64;
+  iRetry: Integer;
 begin
    Assert(aQuery <> nil);
    SetLength(queries, 1);
@@ -325,6 +364,7 @@ begin
       queries[0] := sql;
    end;
 
+  if not IsOpen then Self.Open;
   FADOCommand.Connection := Self.FADOConnection;
 
   //fill params
@@ -383,13 +423,28 @@ begin
       FADOCommand.CommandText := sql;      //params does not always work?
     end;
 
-    try
-       Self.LastExecutedSQL := PreparedQueryToString(FADOCommand.CommandText, params);
-       Result := FADOCommand.Execute(aRecordsAffected, EmptyParam);
-    except
-       on e: Exception do
-          HandleSQLError(e);
+    for iRetry := 1 to 3 do
+    begin
+      try
+        Self.LastExecutedSQL := PreparedQueryToString(FADOCommand.CommandText, params);
+        Result := FADOCommand.Execute(aRecordsAffected, EmptyParam);
+
+         //connection lost? then no error but Result.state is closed and recordsaffected = -1, weird...
+         if (aQuery.QueryType = qtSelect) and (aRecordsAffected < 0) and
+            ( (Result = nil) or (Result.State = adStateClosed) ) then
+         begin
+           Self.Open;
+           Continue;
+         end;
+
+         Break;
+      except
+        on e: Exception do
+            HandleSQLError(e, iRetry < 3);
+      end;
     end;
+    if (aQuery.QueryType = qtSelect) then
+      aRecordsAffected := Result.RecordCount;
 
     QueryPerformanceCounter(iEnd);
       if Assigned(OnSQLExecuted) then
@@ -397,18 +452,22 @@ begin
   end;
 
   FADOCommand.Connection := nil;
+  if (aQuery.QueryType = qtSelect) then
+    Result.Set_ActiveConnection(_Connection(nil));  //detach!
 end;
 
 function TBaseADOConnection.QueryExecuteValidation(const aQuery: IQueryDetails): _Recordset;
 var
   sql: string;
   iRecordsAffected: Integer;
+  iRetry: Integer;
 var iStart, iEnd: Int64;
 begin
   Assert(aQuery <> nil);
 
   sql := TSQLBuilder.GenerateValidationSQL(aQuery);
 
+  if not IsOpen then Self.Open;
   FADOCommand.Connection  := Self.FADOConnection;
   //fill params
   FADOCommand.ParamCheck  := True;  //auto determine type (must be done in case of null values, otherwise also manual possible)
@@ -422,12 +481,16 @@ begin
     OnSQLExecuting(sql, nil);
   QueryPerformanceCounter(iStart);
 
-  try
+  for iRetry := 1 to 3 do
+  begin
+    try
       Self.LastExecutedSQL := FADOCommand.CommandText;
       Result := FADOCommand.Execute(iRecordsAffected, EmptyParam);
-  except
+        Break;
+    except
       on e: Exception do
-         HandleSQLError(e);
+           HandleSQLError(e, iRetry < 3);
+    end;
   end;
   QueryPerformanceCounter(iEnd);
 
@@ -443,6 +506,7 @@ begin
   QueryPerformanceCounter(iStart);
 
   Self.LastExecutedSQL := aSQL;
+  if not IsOpen then Self.Open;
   FADOConnection.Execute(aSQL, Result);
 
   QueryPerformanceCounter(iEnd);
@@ -453,6 +517,7 @@ end;
 function TBaseADOConnection.DirectExecuteData(const aSQL: string): _Recordset;
 var iStart, iEnd: Int64;
     RowsAffected: Integer;
+  iRetry: Integer;
 begin
    FADOCommand.Connection := Self.FADOConnection;
    FADOCommand.CommandText := aSQL;
@@ -462,13 +527,17 @@ begin
       OnSQLExecuting(aSQL, nil);
    QueryPerformanceCounter(iStart);
 
-   try
-      Self.LastExecutedSQL := FADOCommand.CommandText;
-      Result := FADOCommand.Execute;
-      RowsAffected :=  Result.RecordCount;
-   except
-      on e: Exception do
-         HandleSQLError(e);
+   for iRetry := 1 to 3 do
+   begin
+     try
+       Self.LastExecutedSQL := FADOCommand.CommandText;
+       Result := FADOCommand.Execute;
+       RowsAffected :=  Result.RecordCount;
+       Break;
+     except
+       on e: Exception do
+           HandleSQLError(e, iRetry < 3);
+     end;
    end;
 
    QueryPerformanceCounter(iEnd);
@@ -476,10 +545,20 @@ begin
       OnSQLExecuted(aSQL, nil, (iEnd - iStart)/_Frequency/C_SecsPerDay, RowsAffected);
 end;
 
-procedure TBaseADOConnection.HandleSQLError(aError: Exception);
+procedure TBaseADOConnection.HandleSQLError(aError: Exception; aTryReconnect: boolean);
 var
   i: Integer;
-  s: string;
+  s, sSQLState: string;
+const
+  C_ADO_CONNECTION_ERRORS : array[0..6] of string = (
+                  '08001',    // Client unable to establish connection
+                  '08002',    // Connection name in use
+                  '08003',    // Connection does not exist
+                  '08004',    // Server rejected the connection
+                  '08007',    // Connection failure during transaction
+                  '08S01',  // Communication link failure
+                  'HYT01'   // Connection timeout expired
+                  );
 begin
   s := '';
   for i := 0 to FADOConnection.Errors.Count-1 do
@@ -491,7 +570,22 @@ begin
          'SQLState: ' + FADOConnection.Errors[i].SQLState + #13#10 +
          'Number: ' + IntToHex(FADOConnection.Errors[i].Number, 8) + #13#10 +  //http://technet.microsoft.com/en-us/library/ms171852.aspx
          'NativeError: ' + IntToStr(FADOConnection.Errors[i].NativeError);     //http://technet.microsoft.com/en-us/library/ms172060.aspx
+
+    sSQLState := FADOConnection.Errors.Item[i].SQLState;
+    //connection error? try to reopen connection
+    if aTryReconnect and (AnsiIndexText(sSQLState, C_ADO_CONNECTION_ERRORS) <> -1) then
+    begin
+      FADOConnection.Close;
+      try
+        FADOConnection.Open;
+        Exit; //retry
+      except
+      end;
+    end;
   end;
+  if Assigned(OnSQLExecuted) then // Ook als query niet lukt loggen, wel zo handig :)
+    OnSQLExecuted(Self.LastExecutedSQL+ #13#10 + aError.Message, nil, 0, 0);
+
   raise EDBException.Create('Error occured while executing query: '#13#10 +
                             aError.Message + #13#10 +
                             //'Query: ' + #13#10 +
@@ -540,7 +634,7 @@ begin
   else if mssqlsettings is TMSSqlServerCEDBConnectionSettings then
     ServerName := (mssqlsettings as TMSSqlServerCEDBConnectionSettings).FileName;
   Password     := mssqlsettings.Password;
-  Applicatie   := ParamStr(0); //Application.Name;
+  Applicatie   := ExtractFileName(ParamStr(0));
   Provider     := mssqlsettings.Provider;
 end;
 
@@ -552,7 +646,7 @@ begin
   if mssqlsettings is TMSSqlServerDBConnectionSettings then
   begin
     ServerName := (mssqlsettings as TMSSqlServerDBConnectionSettings).Server;
-      DataBase := (mssqlsettings as TMSSqlServerDBConnectionSettings).DataBase;
+    DataBase := (mssqlsettings as TMSSqlServerDBConnectionSettings).DataBase;
     Username   := (mssqlsettings as TMSSqlServerDBConnectionSettings).Username;
   end
   else if mssqlsettings is TMSSqlServerCEDBConnectionSettings then
@@ -562,12 +656,18 @@ begin
   Provider     := mssqlsettings.Provider;
 
   try
-     FADOConnection.Close;
-     FADOConnection.ConnectionString := Self.GenerateConnectionString;
-     FADOConnection.Open;
+    if FADOConnection.Connected then
+    begin
+      FADOConnection.Close;
+      FADOConnection.ConnectionString := Self.GenerateConnectionString;
+      FADOConnection.Open;
+    end
+    //only change, no direct connect (e.g. in case our service is started first, then sql server)
+    else
+      FADOConnection.ConnectionString := Self.GenerateConnectionString;
   except
       on e: Exception do
-      HandleSQLError(e);
+      HandleSQLError(e, false);
   end;
 end;
 
@@ -682,3 +782,4 @@ initialization
   TBaseConnection.RegisterDBConnection(dbtSQLServerCE, TMSSQLConnection);
 
 end.
+

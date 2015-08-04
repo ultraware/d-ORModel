@@ -448,7 +448,7 @@ begin
     begin
       SetLength(s, str.Size);
       Move(str.Bytes[0], s[1], str.Size);
-      Result := UTF8Decode(s);
+      Result := UTF8ToString(s);
     end;
   finally
     str.Free;
@@ -1095,7 +1095,7 @@ begin
     begin
       SetLength(s, str.Size);
       Move(str.Bytes[0], s[1], str.Size);
-      Result := UTF8Decode(s);
+      Result := UTF8ToString(s);
     end;
   finally
     str.Free;
@@ -1207,8 +1207,14 @@ begin
           if rtype.GetProperty('Data') = nil then Continue;
           rdata := rtype.GetProperty('Data').PropertyType;
           if rdata = nil then Continue;
+
+          //get id or other PK field (mostly the first one)
           p := rdata.GetProperty('ID');
+          if p = nil then
+            if rdata.GetProperties <> nil then
+              p := rdata.GetProperties[0];  //first field
           if p = nil then Continue;
+
           aa := p.GetAttributes;
           if aa = nil then Continue;
           if not (aa[0] is TBaseTableAttribute) then Continue;

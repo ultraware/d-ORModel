@@ -174,6 +174,8 @@ type
     //add to RecordListData and get index
     function  AddSlotForList: Integer;
     procedure AllocSlotsForLists(aSlotCount: Integer);
+
+    procedure ClearData;
   end;
   PMultiRowData = ^TMultiRowData;
 
@@ -445,6 +447,17 @@ end;
 procedure TMultiRowData.AllocSlotsForSingleRow(aSlotCount: Integer);
 begin
   SetLength(SingleRowData, aSlotCount);
+end;
+
+procedure TMultiRowData.ClearData;
+var
+   I: Integer;
+begin
+   for I := 0 to High(RecordListData) do
+   begin
+      RecordListData[I].FDataLoaded := false;
+      RecordListData[I].RowValues := nil;
+   end;
 end;
 
 { TValueRecord }

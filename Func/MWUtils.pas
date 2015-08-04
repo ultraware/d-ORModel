@@ -14,40 +14,76 @@ uses
   UltraStringUtils;
 
 function PreparedQueryToString(const aSQL: string; aParams: TVariantArray): string;
-var i, LPos, CPos: Integer;
+type TStringMode = (smDefault, smQuoted, smSquareBrackets);
+var ParamIndex: Integer;
+    aChar: Char;
     RString: string;
+    Modus: TStringMode;
+    AddChar: Boolean;
 begin
    Result := '';
-   i := 0;
-   LPos := 1;
-   CPos := Pos('?', aSQL);
+   ParamIndex := 0;
+   Modus := smDefault;
 
-   while (CPos > 0) do
+   for aChar in aSQL do
    begin
-      Case VarType(aParams[i]) of
-         varString, varUString, varWord, varLongWord:
-            RString := QuotedStr(VarToStr(aParams[i]));
-         varDate:
-            RString := QryDateToStr(VarToDateTime(aParams[i]), SMSSQL, dtfDateTimeFull);
-         varNull:
-            RString := 'null';
-         varDouble:
-            RString := StringReplace(VarToStr(aParams[i]), ',','.',[]);
-         else
-            RString := VarToStr(aParams[i]);
-      end;
+      AddChar := True;
+      case aChar of
+         '''':
+         begin
+            case Modus of
+               smDefault:        Modus := smQuoted;
+               smQuoted:         Modus := smDefault;
+            end;
+         end;
+         '[':
+         begin
+            case Modus of
+               smDefault:        Modus := smSquareBrackets;
+            end;
+         end;
+         ']':
+         begin
+            case Modus of
+               smSquareBrackets: Modus := smDefault;
+            end;
+         end;
+         '?':
+         begin
+            case Modus of
+               smDefault:
+               begin
+                  case VarType(aParams[ParamIndex]) of
+                    varString, varUString, varWord, varLongWord:
+                        RString := QuotedStr(VarToStr(aParams[ParamIndex]));
+                    varDate:
+                        RString := QryDateToStr(VarToDateTime(aParams[ParamIndex]), SMSSQL, dtfDateTimeFull);
+                    varNull:
+                        RString := 'null';
+                    varDouble:
+                        RString := StringReplace(VarToStr(aParams[ParamIndex]), ',','.',[]);
+                    varBoolean:
+                        RString := IntToStr(Ord(Boolean(aParams[ParamIndex])));
+                    else
+                        RString := VarToStr(aParams[ParamIndex]);
+                  end;
 
-      Result := Result+Copy(aSQL, LPos, CPos-LPos)+RString;
-      LPos := CPos+1;
-      CPos := PosEx('?', aSQL, LPos);
-      Inc(i);
+                  Result := Result+RString;
+                  Inc(ParamIndex);
+                  AddChar := False;
+               end;
+            end;
+         end;
+      end;
+      if AddChar then
+         Result := Result + aChar;
    end;
 
    //Aantal parameters en aantal vervangvelden(='?') in de SQL string moeten overeenkomen.
-   Assert(i <= Length(aParams));// TODO: Hier met Andre naar kijken! Dit gaat met mis Identity insert SQLCE!
+   //Assert(i <= Length(aParams));// TODO: Hier met Andre naar kijken! Dit gaat met mis Identity insert SQLCE!
    //Laatste deel query wegschrijven of hele query als er geen parameters meegegeven zijn.
-   if (LPos <= Length(aSQL)) then
-      Result := Result+Copy(aSQL, LPos, Length(aSQL)-LPos+1);
+   //if (LPos <= Length(aSQL)) then
+   //   Result := Result+Copy(aSQL, LPos, Length(aSQL)-LPos+1);
 end;
 
 end.

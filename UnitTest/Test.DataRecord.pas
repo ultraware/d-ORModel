@@ -283,6 +283,11 @@ begin
       Check(Length(tm.Name.TypedString) > 1, 'Test name should be longer than 1');
       CheckFalse(tm.IsValid(), 'Name is longer than maximum length');
 
+
+
+
+
+
       {Emailadres checks}
 //      tm.MyEmailAdres.TypedString := 'test@email.nl';
 //      CheckEquals(True, tm.MyEmailAdres.IsValid, 'Emailadres voldoet aan de eisen');
@@ -337,6 +342,8 @@ begin
 //         .InnerJoin.OnFields(relatie.ID_StamRegio  , relatie.Relatie_T_StamRegio_ID);
 //
 ////      if TDataProvider.QuerySearchSingle(query as IQueryDetails) then ;
+//
+//
 //   finally
 //      relatie.Free;
 //   end;
