@@ -13,6 +13,7 @@ type
   TTestField      = class(TBaseTableField);
   TTestFieldClass = class of TTestField;
 
+  {$RTTI INHERIT}
   [TTableMeta('Test')]
   Test = class(TBaseTableAttribute)
   public

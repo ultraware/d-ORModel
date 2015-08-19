@@ -184,7 +184,7 @@ begin
 
         Assert(lpool.First <> nil);
         pi.Connection := lpool.First.Connection.Clone;
-//        pi.Connection.Open; //pi.Connection.Open;    no direct connect!
+//        pi.Connection.Open; //!no direct connect during service startup!
         pi.Connection.Name := pi.Connection.Name + format('<poolitem_%d>',[lpool.Count+1]);
         lpool.Add(pi);
 
@@ -343,4 +343,3 @@ begin
 end;
 
 end.
-

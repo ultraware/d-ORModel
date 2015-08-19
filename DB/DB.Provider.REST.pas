@@ -181,7 +181,7 @@ begin
     if aJSON.O[aFieldName] = nil then
       Result := null
     else if (aFieldType = ftFieldDouble) then
-      Result := aJSON.D[aFieldName]
+      Result := aJSON.D[aFieldName]   //data already converted from string to decimal, no need to use DecimalSeparator here
     else if (aFieldType = ftFieldDateTime) then
     begin
       if TryStrToDateTime(stringReplace(aJSON.S[aFieldName],'''','',[rfReplaceAll]), Date, RESTFormatsettings) then

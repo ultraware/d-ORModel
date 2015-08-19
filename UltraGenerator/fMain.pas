@@ -79,8 +79,8 @@ implementation
 uses
   TypInfo, ADODB, StrUtils, System.MaskUtils, UITypes,
   DB.ConnectionPool, Data.DataRecord, DB.Connection.SQLServer, DB.Settings,
-  UltraStringUtils, fModelGenerator, uGenerator, uMetaLoader,
-  fDBSettings, DB.Settings.SQLServer;
+  UltraStringUtils, fModelGenerator, uGenerator, uMetaLoader
+  , fDBSettings, DB.Settings.SQLServer;
 
 type TGridField = (cFld_Fieldname, cFld_Type, cFld_CustomType, cFld_Stamsoort, cFld_Required, cFld_MinValue, cFld_MaxValue, cFld_Displaylabel, cFld_DisplayFormat, cFld_DisplayWidth, cFld_EditFormat, cFld_EditMask, cFld_FKTable, cFld_FK_Field, cFld_SkipDefault, cFld_SVisible);
 const C_GridFieldIndex: array[TGridField] of Integer = (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15);

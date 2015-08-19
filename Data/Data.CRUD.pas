@@ -23,7 +23,7 @@ unit Data.CRUD;
 
 interface
 
-uses
+uses // Delphi
   Classes, SysUtils, Generics.Collections,
   DB.Settings, DB.Provider,
   Data.Query, Data.Base, Data.DataRecord, DB;
@@ -31,8 +31,10 @@ uses
 type
   TBaseDataCRUDClass = class of TBaseDataCRUD;
   TBaseDataCRUD = class(TObject)
+  protected
+    function GetIDField: TBaseIDField; virtual;
+    function CTEName: string; virtual;
   private
-    function GetIDField: TBaseIDField;
     function GetQueryFindSortString: String;
     procedure SetQueryFindSortString(const Value: String);
   protected
@@ -69,7 +71,7 @@ type
 
     function HasQuery: Boolean;
     function Query   : IQueryBuilder;
-    function NewQuery: IQueryBuilder;
+    function NewQuery: IQueryBuilder; virtual;
     //
     function  QuerySearchSingle: Boolean;
     function  QuerySearchCount : Integer;
@@ -91,7 +93,7 @@ type
     procedure QueryExecute(aNoErrorIfNoneAffected: boolean = False {default errors! must specify manually if query can skip records, so no "hidden" errors});
     //
     function  DoFullValidation(aSkipEmptyFields: Boolean = false; aValidationFilter: TFieldFilter = nil): TValidationErrors;
-    procedure RecordCreate;
+    procedure RecordCreate; virtual; 
     procedure RecordRetrieve(aID: Int64);overload;
     procedure RecordRetrieve(aID: Int64; aFields: array of TBaseField);overload;
     function  RecordUpdate: Integer;
@@ -110,6 +112,36 @@ type
     function GetData: T;
   public
     constructor Create; override;
+    procedure   AfterConstruction; override;
+
+    property Data: T read GetData;
+  end;
+
+   TBaseCTE_CRUD = class(TBaseDataCRUD)
+   private
+      CTEQery: IQueryBuilder;
+   protected
+      function GetIDField: TBaseIDField; override;
+      function MainField: TBaseIDField; virtual; abstract;
+      procedure MaakQuery(var Qry: IQueryBuilder); virtual; abstract;
+   public
+      procedure AfterConstruction; override;
+      function NewQuery: IQueryBuilder; override;
+   end;
+
+  TCTEDataRecord = class(TMultiDataRecord)
+  private
+    FCTEQuery: IQueryBuilder;
+  public
+    property CTEQuery: IQueryBuilder read FCTEQuery;
+  end;
+
+  TCTE_CRUD<T:TCTEDataRecord, constructor> = class(TBaseCTE_CRUD)
+  private
+    function GetData: T;
+  public
+    constructor Create; override;
+    procedure AfterConstruction; override;
 
     property Data: T read GetData;
   end;
@@ -118,7 +150,10 @@ implementation
 
 { TBaseDataCRUD }
 
-uses ThreadFinalization, Meta.Data, UltraStringUtils;
+uses // Delphi
+     ThreadFinalization{, Meta.Data},
+     // Shared
+     UltraUtilsBasic;
 
 procedure TBaseDataCRUD.AfterConstruction;
 begin
@@ -152,6 +187,11 @@ begin
   //note: cruds are created as threadvar so we must free these objects ourselves
   //in case the thread terminates (no reference count etc possible)
   TThreadFinalization.RegisterThreadObject(self);
+end;
+
+function TBaseDataCRUD.CTEName: string;
+begin
+   Result := ''; // alleen voor CTE
 end;
 
 destructor TBaseDataCRUD.Destroy;
@@ -280,6 +320,8 @@ begin
   end
   else
   begin
+    Assert(Self.Data.Count > 0, 'no published fields found');  //field properties must be published instead of public
+    Assert(Self.IDField <> nil, 'no primary key found');
     dbtype := GetDefaultDBTypeOfDBName(Self.IDField.DatabaseTypeName);  //note: default can be empty!
     dbName := Self.IDField.DatabaseTypeName;
   end;
@@ -320,7 +362,7 @@ end;
 function TBaseDataCRUD.Query: IQueryBuilder;
 begin
   if FQuery = nil then
-    FQuery := TQueryBuilder.Create(IDField);
+    FQuery := TQueryBuilder.Create(IDField, CTEName);
   Result := FQuery;
 end;
 
@@ -499,17 +541,72 @@ end;
 
 { TDataCRUD<T> }
 
-constructor TDataCRUD<T>.Create;
+procedure TDataCRUD<T>.AfterConstruction;
 begin
-  inherited;
   {$IFDEF VER210}
   FData := TDataRecord(T.Create)
   {$ELSE}
   FData := T.Create as TDataRecord;
   {$ENDIF}
+
+  inherited;
+end;
+
+constructor TDataCRUD<T>.Create;
+begin
+  inherited Create;
 end;
 
 function TDataCRUD<T>.GetData: T;
+begin
+  {$IFDEF VER210}
+  Result := T(FData);
+  {$ELSE}
+  Result := FData as T;
+  {$ENDIF}
+end;
+
+{ TBaseCTE_CRUD }
+
+procedure TBaseCTE_CRUD.AfterConstruction;
+begin
+  inherited;
+   CTEQery := TQueryBuilder.Create(MainField, CTEname);
+   MaakQuery(CTEQery);
+end;
+
+function TBaseCTE_CRUD.GetIDField: TBaseIDField;
+begin
+   Result := MainField;
+end;
+
+function TBaseCTE_CRUD.NewQuery: IQueryBuilder;
+begin
+   Result := inherited;
+   CTEQery.Details.SetParentQuery(nil); // niks onthouden van vorige keer
+   Result.AddCTE(CTEQery);
+end;
+
+{ TDataCRUD<T> }
+
+procedure TCTE_CRUD<T>.AfterConstruction;
+begin
+  {$IFDEF VER210}
+  FData := TDataRecord(T.Create)
+  {$ELSE}
+  FData := T.Create as TDataRecord;
+  {$ENDIF}
+
+  inherited;
+  Data.FCTEQuery := CTEQery; //join can see that a CTE is used
+end;
+
+constructor TCTE_CRUD<T>.Create;
+begin
+  inherited;
+end;
+
+function TCTE_CRUD<T>.GetData: T;
 begin
   {$IFDEF VER210}
   Result := T(FData);

@@ -24,9 +24,7 @@ unit Data.CRUDSettings;
 interface
 
 uses
-  Graphics, Classes, SysUtils, Controls, Meta.Data,
-  XMLFile, RttiClasses
-  ;
+  SysUtils, XMLFile, RttiClasses, Meta.Data;
 
 const
   cCRUDSettings_XML = 'CRUDSettings.xml';
@@ -107,11 +105,11 @@ type
     FFields: TCRUDFieldArray;
     FComment: string;
     FDescription: string;
-    FExists: Boolean;
-    FIsShared: Boolean;
+    FTableFunctionParameterCount: Integer;
     FIsDataBaseTable: Boolean;
     FCanLoadFromDB: Boolean;
-    FTableFunctionParameterCount: Integer;
+    FIsShared: Boolean;
+    FExists: Boolean;
   public
     function  FieldCount: Integer;
     function  FindField(const aFieldName: string; const toevoegen: boolean): TCRUDField;

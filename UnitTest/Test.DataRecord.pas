@@ -73,6 +73,7 @@ type
     function GetMyEnumField(const Index: Integer): TMyEnumField;
   public
     [TTypedMetaField   ('ID', ftFieldID, True{required}, '')]
+    [TPKMetaField(True{autoinc})]
     property  ID      : TMyIDField         index  0   read GetMyIDField;
     [TTypedMetaField   ('Name', ftFieldString, True{required}, '')]
     property  Name    : TTypedStringField     index  1   read GetStringField;
@@ -89,9 +90,9 @@ type
 
     property  MyEnum: TMyEnumField index 5 read GetMyEnumField;
     [TTypedMetaField   ('TestEnum', ftFieldString, False, '')]
-    property  MyEnum2: TMyEnumField index 5 read GetMyEnumField;
+    property  MyEnum2: TMyEnumField index 6 read GetMyEnumField;
     [TTypedMetaField   ('TestEnum2', ftFieldInteger, False, '')]
-    property  MyEnum3: TMyEnumField index 6 read GetMyEnumField;
+    property  MyEnum3: TMyEnumField index 7 read GetMyEnumField;
 
 //    [TTypedMetaField   ('MyEmailAdres', ftFieldString, False, '')]
 //    property MyEmailAdres: TTypedEmailField index 9 read GetTypedEmailField;

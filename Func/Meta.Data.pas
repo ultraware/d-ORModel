@@ -23,11 +23,12 @@ unit Meta.Data;
 
 interface
 
-uses
+uses // Delphi
   Types;
 
 type
   {$RTTI EXPLICIT METHODS([vcPublic, vcPublished]) PROPERTIES([vcPublished]) FIELDS([])}
+  //!vcPublic is needed for attribute constructor to be visible!
   TMetaAttribute = class(TCustomAttribute)
   protected
     FRefCount: Integer;
@@ -226,7 +227,7 @@ type
     property Field: TBaseTableFieldClass      read FField;
     property TableMetaData: TTableMeta        read FTableMetaData write SetTableMetaData;
     property FieldMetaData: TTypedMetaField   read FFieldMetaData write SetFieldMetaData;
-    property KeyMetaData  : TKeyMetaField     read FKeyMetaData;
+    property KeyMetaData  : TKeyMetaField     read FKeyMetaData   write FKeyMetaData;
     property DefaultMeta  : TDefaultValueMeta read FDefaultMeta;
 
     property ConstraintMeta: TFieldConstraintMeta read FConstraintMeta write FConstraintMeta;
@@ -239,10 +240,10 @@ type
 
 implementation
 
-uses
-  UltraStringUtils,
-  RTTI, System.StrUtils, Variants, System.SysUtils,
-  GlobalRTTI, Data.Base;
+uses // Delphi
+     RTTI, System.StrUtils, Variants, System.SysUtils, GlobalRTTI, Data.Base,
+     // Shared
+     UltraUtilsBasic;
 
 { TTableMeta }
 

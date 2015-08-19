@@ -443,7 +443,7 @@ class function TGenerator.GenerateMetaForTable(const aTable: TCRUDTable): Boolea
 var str, strTemplate: TStrings;
   f: TCRUDField;
     sAttr, sClass, ExtraUses, sFileName, sOrigineelText: string;
-    UseExtraStamUses: Boolean;
+    //UseExtraStamUses: Boolean;
 
   function GenerateDisplayLabeltext(const Field: TCRUDField): string;
   begin
@@ -456,7 +456,7 @@ var str, strTemplate: TStrings;
 begin
   str := TStringList.Create;
   strTemplate := TStringList.Create;
-  UseExtraStamUses := False;
+  //UseExtraStamUses := False;
   try
     sFileName := aTable.MetaFileName;
     if FileExists(sFileName) then

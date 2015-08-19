@@ -61,6 +61,7 @@ type
     function Delete: IDelete;
     function Insert: IInsert;
     function Details: IQueryDetails;
+    procedure AddCTE(CTE: IQueryBuilder);
   end;
 
   TQueryType = (qtNone, qtSelect, qtUpdate, qtDelete, qtInsert);
@@ -92,6 +93,7 @@ type
 
   TSelectOperation = (soSelect, soSum, soMin, soMax, soAvg, soCount, soCountDistinct);
   TSelectFields = class(TDictionary<TBaseField, TSelectOperation>);
+  TCTEList = class(TList<IQueryBuilder>);
 
   IQueryDetails = interface
     ['{00A8B1B4-E88C-4935-BAFF-CD51D61FB8B5}']
@@ -134,6 +136,12 @@ type
     function UpdateIncFieldValues: TUpdateFieldValues;
     function UpdateFieldFields: TUpdateFieldFields;
     function UpdateIncFieldFields: TUpdateFieldFields;
+
+    function CTEs : TCTEList;
+
+    function GetCTEName: string;
+    procedure SetCTEName(const Value: string);
+    property CTEName: string read GetCTEName write SetCTEName;
 
     procedure Clear;
   end;
@@ -457,6 +465,10 @@ type
   IDelete = interface
     function Where: IWhere;
     //function From(const aDatabase, aTable: string): IDeleteWhere;
+    {join}
+    function InnerJoin     : IJoin;
+    function RightOuterJoin: IJoin;
+    function LeftOuterJoin : IJoin;
   end;
 
   IDeleteWhere = interface
@@ -552,8 +564,8 @@ type
     function CloseBracket : IWhere_Standalone; // )
     function AndWhere     : IWhere_Standalone;
     function OrWhere      : IWhere_Standalone;
-    function Exists   (const aSubQuery: IQueryBuilder): IWhere_Standalone;
-    function NotExists(const aSubQuery: IQueryBuilder): IWhere_Standalone;
+    function Exists        (const aSubQuery: IQueryBuilder): IWhere_Standalone;
+    function NotExists     (const aSubQuery: IQueryBuilder): IWhere_Standalone;
     {IWhereNext_Standalone}
     function ISValue       (const aValue: Variant): IWhere_Standalone;
     function ISNotValue    (const aValue: Variant): IWhere_Standalone;
@@ -725,6 +737,8 @@ type
     FJoinPartList: TJoinPartList;
     FOrderByPartList: TOrderByPartList;
     FGroupByPart: TGroupByPart;
+    FCTEList: TCTEList;
+    FCTEName: string;
 
     procedure DetermineAliasForField(aField: TBaseField);
   protected
@@ -737,11 +751,15 @@ type
     function Delete: IDelete;
     function Insert: IInsert;
     function Details: IQueryDetails;
+    procedure AddCTE(CTE: IQueryBuilder);
   protected
     FParentQuery: IQueryDetails;
 
     {IQueryDetails}
     function QueryType   : TQueryType;
+    function CTEs : TCTEList;
+    function GetCTEName: string;
+    procedure SetCTEName(const Value: string);
 
 //    function Database: string;
     function Table: string;
@@ -889,6 +907,8 @@ type
     function WithValue(const aValue: Variant) : IUpdateEnd;
     function WithField(const aField: TBaseField): IUpdateEnd;
   protected
+  private
+    procedure AddCTEFromField(const aField: TBaseField);
     {IDelete}
 //    function From(const aDatabase, aTable: string): IDeleteWhere;
   protected
@@ -947,7 +967,8 @@ type
     function IsNotNull_     ()                  : IHavingEnd;
   public
     //constructor Create(const aDatabase, aTable: string); virtual;
-    constructor Create(const aMainTableField: TBaseField);
+    constructor Create(const aMainTableField: TBaseField); overload;
+    constructor Create(const aMainTableField: TBaseField; const aCTEName: string); overload;
     procedure   AfterConstruction; override;
     destructor  Destroy; override;
   end;
@@ -955,13 +976,45 @@ type
 implementation
 
 uses
-  SysUtils, Variants, Data.CustomSQLFields;
+  SysUtils, Variants, Data.CustomSQLFields, Data.CRUD
+  , Meta.Data;
 
 { TQueryBuilder }
 
 function TQueryBuilder.ActivateIdentityInsert: Boolean;
 begin
   Result := FEnableIdentityInsert;
+end;
+
+procedure TQueryBuilder.AddCTE(CTE: IQueryBuilder);
+var CTENames: TList<string>;
+    aCTEName, org: string;
+    i: Integer;
+    aCTE: IQueryBuilder;
+begin
+   if (not FCTEList.Contains(CTE)) then
+   begin
+      CTENames := TList<string>.Create;
+      try
+         // find unique CTE name
+         for aCTE in FCTEList do
+            CTENames.Add(aCTE.Details.CTEName);
+         aCTEName := CTE.Details.CTEName;
+         org := aCTEName;
+         i := 0;
+         while CTENames.Contains(aCTEName) do
+         begin
+            Inc(i);
+            aCTEName := org + IntToStr(i);
+         end;
+         CTE.Details.CTEName := aCTEName;
+//         Inc((CTE as TQueryBuilder).FRefCount);
+
+         FCTEList.Add(CTE);
+      finally
+         CTENames.Free;
+      end;
+   end;
 end;
 
 procedure TQueryBuilder.AfterConstruction;
@@ -974,6 +1027,7 @@ begin
   FWhereBuilder._AddRef;
   FHavingBuilder := TWhereBuilder.Create;
   FHavingBuilder._AddRef;
+  FCTEList := TCTEList.Create;
 
   FAliases  := TObjectDictionary<TDataRecord, TAliasList>.Create([doOwnsValues]);
   FAllAliases := TList<string>.Create;
@@ -1062,6 +1116,7 @@ end;
 
 procedure TQueryBuilder.Clear;
 begin
+  FCTEList.Clear;
   SelectFields.Clear;
   SelectFields_Ordered.Clear;
   JoinParts.Clear;
@@ -1126,6 +1181,12 @@ begin
    FHavingBuilder.Count;
 end;
 
+constructor TQueryBuilder.Create(const aMainTableField: TBaseField; const aCTEName: string);
+begin
+   FCTEName := aCTEName;
+   Create(aMainTableField);
+end;
+
 function TQueryBuilder.CountDistinct_: IHaving;
 begin
    Result := Self;
@@ -1164,6 +1225,11 @@ begin
   FMainTableField := aMainTableField;
 end;
 
+function TQueryBuilder.CTEs: TCTEList;
+begin
+   Result := FCTEList;
+end;
+
 function TQueryBuilder.CurrentSelect: ISelectNext;
 begin
   Result := Self;
@@ -1186,6 +1252,7 @@ begin
 end;
 
 destructor TQueryBuilder.Destroy;
+var CTE: IQueryBuilder;
 begin
   FSelectFieldsSubqueries.Free;
   FAllAliases.Free;
@@ -1205,6 +1272,9 @@ begin
   FUpdateFieldFields.Free;
   FIncrementFieldFields.Free;
   FGroupByPart.Free;
+   for CTE in FCTEList do
+      CTE.Details.SetParentQuery(nil); // loskoppelen van deze query, CTE kan nog wel gebruikt worden
+   FCTEList.Free;
   inherited;
 end;
 
@@ -1231,9 +1301,14 @@ begin
   if not aliases.ContainsKey(aField.TableClassName) then
   begin
     i := 1;
-    Assert(aField.TableName <> '');
-    //todo: CamelCase search? or generate alias in generator?
-    firstLetter := aField.TableName[1];
+    if (FCTEName <> '') and SameText(aField.TableClassName, MainTableField.TableClassName) and (aField.DataRecord = MainTableField.DataRecord) then
+       firstLetter := FCTEName[1]
+    else
+    begin
+      Assert(aField.TableName <> '');
+      //todo: CamelCase search? or generate alias in generator?
+      firstLetter := aField.TableName[1];
+    end;
     while (not CharInSet(firstLetter, ['a'..'z','A'..'Z'])) do // #TempTable -> skip #
     begin
       Inc(i);
@@ -1331,6 +1406,7 @@ function TQueryBuilder.FromSubQuery(aSubQuery: IQueryBuilder): ISelectNext;
 begin
   Result := Self;
   FFromSubQuery := aSubQuery as IQueryDetails;
+   AddCTEFromField(aSubQuery.Details.MainTableField);
 end;
 
 function TQueryBuilder.GetAliasForField(aField: TBaseField): string;
@@ -1364,6 +1440,11 @@ begin
     if not aliaslist.TryGetValue(aField.TableClassName, Result) then
       Assert(False);
   end;
+end;
+
+function TQueryBuilder.GetCTEName: string;
+begin
+   Result := FCTEName;
 end;
 
 function TQueryBuilder.GreaterOrEqual(const aValue: Variant): IWhereEnd;
@@ -1628,6 +1709,17 @@ begin
   FWhereBuilder.NotInSet(aSet);
 end;
 
+procedure TQueryBuilder.AddCTEFromField(const aField: TBaseField);
+var CTE: IQueryBuilder;
+begin
+   if (aField.DataRecord is TCTEDataRecord) and (not aField.DataRecord.Contains(MainTableField)) then
+   begin
+      CTE :=(aField.DataRecord as TCTEDataRecord).CTEQuery;
+      CTE.Details.SetParentQuery(Self);// for generating alias
+      AddCTE(CTE);
+   end;
+end;
+
 function TQueryBuilder.OnFieldAndNotValue(aJoinTableField: TBaseField;
   const aValue: Variant): IJoinNext;
 var jp: TJoinPartFieldValue;
@@ -1646,6 +1738,7 @@ begin
     jp.FJoinValue    := aValue;
   end;
   FJoinPartList.Add(jp);
+  AddCTEFromField(aJoinTableField);
   DetermineAliasForField(aJoinTableField);
 end;
 
@@ -1667,6 +1760,7 @@ begin
     jp.FJoinValue    := aValue;
   end;
   FJoinPartList.Add(jp);
+  AddCTEFromField(aJoinTableField);
   DetermineAliasForField(aJoinTableField);
 end;
 
@@ -1691,6 +1785,7 @@ begin
     jp.FCompare      := aCompare;
   jp.FJoinValue    := aValue;
   FJoinPartList.Add(jp);
+  AddCTEFromField(aJoinTableField);
   DetermineAliasForField(aJoinTableField);
 end;
 
@@ -1704,6 +1799,7 @@ begin
   jp.FJoinField    := aJoinTableField;
   jp.FSourceField    := aCompareField;
   FJoinPartList.Add(jp);
+  AddCTEFromField(aJoinTableField);
   DetermineAliasForField(aJoinTableField);
 end;
 
@@ -1719,6 +1815,7 @@ begin
   for i := 0 to High(aValues) do
     jp.FJoinSet[i] := aValues[i];
   FJoinPartList.Add(jp);
+  AddCTEFromField(aJoinTableField);
   DetermineAliasForField(aJoinTableField);
 end;
 
@@ -1732,6 +1829,7 @@ begin
   jp.FSourceField  := aValueTableField;
   FJoinPartList.Add(jp);
 
+  AddCTEFromField(aJoinTableField);
   DetermineAliasForField(aJoinTableField);
   DetermineAliasForField(aValueTableField);
 end;
@@ -1856,6 +1954,11 @@ begin
   Result := FSelectFields_Ordered;
 end;
 
+procedure TQueryBuilder.SetCTEName(const Value: string);
+begin
+   FCTEName := Value;
+end;
+
 function TQueryBuilder.SetField(aField: TBaseField): IUpdateNext;
 begin
   Assert(not (Afield is TCustomCalculatedField));
@@ -1874,7 +1977,11 @@ begin
   Result := Self;
   assert(FInsertFieldValues <> nil);
 
-  FInsertFieldValues.AddOrSetValue(aField, aValue);
+  //force datetime variant
+  if (aField.FieldType = ftFieldDateTime) and (not VarIsNull(aValue)) and (not VarIsEmpty(aValue)) then
+    FInsertFieldValues.AddOrSetValue(aField, TDateTime(aValue))
+  else
+    FInsertFieldValues.AddOrSetValue(aField, aValue);
 end;
 
 function TQueryBuilder.SetFieldWithField(aField, aValueField: TBaseField): IInsert;
@@ -1891,6 +1998,7 @@ function TQueryBuilder.From(aRecord: TDataRecord): IJoinNext;
 begin
    Result := Self;
    FInsertFromRecord := aRecord;
+   AddCTEFromField(aRecord.GetFieldForID);
 end;
 
 procedure TQueryBuilder.SetParentQuery(aParent: IQueryDetails);
@@ -1914,8 +2022,9 @@ begin
   if FSelectFieldsSubqueries = nil then
     FSelectFieldsSubqueries := TList<IQueryDetails>.Create;
 
-  Assert((aSubQuery as IQueryDetails).SelectFields.Count = 1, 'subqueries in select may contain only 1 field');
-  FSelectFieldsSubqueries.Add(aSubQuery as IQueryDetails);
+  Assert(aSubQuery.Details.SelectFields.Count = 1, 'subqueries in select mag maar 1 veld bevatten');
+  FSelectFieldsSubqueries.Add(aSubQuery.Details);
+  AddCTEFromField(aSubQuery.Details.MainTableField);
 end;
 
 function TQueryBuilder.Sum(aField: TBaseField): ISelectNext;
@@ -1930,6 +2039,9 @@ end;
 
 function TQueryBuilder.Table: string;
 begin
+  if (FCTEName <> '') then
+    Result := FCTEName
+  else
   Result := FTable;
 end;
 

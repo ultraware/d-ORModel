@@ -21,7 +21,7 @@ type
 implementation
 
 uses
-   CRUD.TEST;
+   CRUD.TEST, DB.Connection, DB.ConnectionPool;
 
 { TQueryTester }
 

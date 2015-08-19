@@ -25,7 +25,7 @@ interface
 
 {$TYPEDADDRESS ON}
 
-uses
+uses // Delphi
   Generics.Collections,
   Data.Base,
   Meta.Data, MultiEvent, SysUtils;
@@ -536,7 +536,8 @@ type
     property UnsafeTypedIDValue: Int64 read GetTypedIDValue write SetTypedIDValue;
   end;
 
-  {$RTTI EXPLICIT METHODS([vcPublished, vcPublic]) PROPERTIES([vcPublished, vcPublic]) FIELDS([vcPublished, vcPublic]) }   // make visible for RTTI
+  {$RTTI EXPLICIT METHODS([vcPublished]) PROPERTIES([vcPublished]) FIELDS([vcPublished, vcPublic]) }   // make visible for RTTI
+  //!vcPublic fields is needed to be able to check if ID field is present!
   TBaseIDValue = record
     ID: Int64;
 //    ID: T;
@@ -691,8 +692,11 @@ type
 
 implementation
 
-uses RTTI, TypInfo, GlobalRTTI, Variants, System.DateUtils,
-     Math, System.StrUtils, UltraStringUtils;
+uses // Delphi
+     RTTI, TypInfo, GlobalRTTI, Variants, System.DateUtils,
+     Math, System.StrUtils,
+     // Shared
+     UltraUtilsBasic;
 
 procedure AddFieldsToArray(const aFieldArray: array of TBaseField; var aArray: TFieldArray; const Unique: Boolean = False);
 var Field: TBaseField;
@@ -1101,6 +1105,7 @@ var
   tablefieldmeta: TBaseTableAttribute;
   defaultmeta: TDefaultValueMeta;
   fieldconstraint: TFieldConstraintMeta;
+  pkmeta: TPKMetaField;
   ft: TFieldType;
 begin
   //todo: keep one instance of each type in memory for fast cloning?
@@ -1126,6 +1131,7 @@ begin
          defaultmeta := nil;
          fieldmeta := nil;
          fieldconstraint := nil;
+         pkmeta := nil;
          aa := ip.GetAttributes();
          for a in aa do
          begin
@@ -1157,6 +1163,14 @@ begin
                defaultmeta.IncRef; // own ref
                if fieldmeta <> nil then
                   fieldmeta.DefaultValue := defaultmeta;
+            end
+            else if a is TPKMetaField then
+            begin
+               pkmeta := (a as TPKMetaField); //[TPKMetaField(True{autoinc})]
+               // rtticache has one reference
+               if pkmeta.RefCount = 0 then
+                  pkmeta.IncRef;
+               pkmeta.IncRef; // own ref
             end
             else if a is TFieldConstraintMeta then
             begin
@@ -1193,6 +1207,8 @@ begin
             tablefieldmeta := TCustomTableAttribute.Create(nil);
          if (tablefieldmeta.FieldMetaData = nil) then
             tablefieldmeta.FieldMetaData := fieldmeta;
+         if (tablefieldmeta.KeyMetaData = nil) then
+            tablefieldmeta.KeyMetaData := pkmeta;
 
          if fieldconstraint <> nil then
            tablefieldmeta.ConstraintMeta := fieldconstraint;

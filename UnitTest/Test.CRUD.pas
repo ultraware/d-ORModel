@@ -35,6 +35,8 @@ type
     procedure TestTDatasetUniquename;
 
     procedure TestCRUDless;
+
+    procedure TestSmartPointer;
   end;
 
    TTempCRUD = class(TDataCRUD<TDataRecord>);
@@ -46,7 +48,8 @@ uses
   Data.CRUDDataset,
   DB, DBGrids, Forms,
   Meta.CustomIDTypes, Variants, Data.Query,
-  Meta.Data, ThreadFinalization, Meta.TEST, DB.SQLBuilder, DB.Connection, DB.ConnectionPool,
+  Meta.Data, ThreadFinalization,
+  Meta.TEST, DB.SQLBuilder, DB.Connection, DB.ConnectionPool,
   DB.Connection.SQLServer, Data.Base, System.Diagnostics, Vcl.Dialogs,
   Data.Win.ADODB;
 
@@ -54,15 +57,16 @@ uses
 
 procedure TCRUDTester.SetUp;
 var
-  connection: TBaseConnection;
+  oconnection: TBaseConnection;
   str: TStringList;
   sql: string;
+  recordset: _Recordset;
 begin
   inherited;
 
   if not FTablesChecked then
   begin
-    connection := TDBConnectionPool.GetConnectionFromPool(TESTCRUD.GetProvider.GetDBSettings);
+    oconnection := TDBConnectionPool.GetConnectionFromPool(TESTCRUD.GetProvider.GetDBSettings);
     str := TStringList.Create;
     try
       if (oconnection as TBaseADOConnection).IsSQLServerCE then
@@ -89,13 +93,13 @@ begin
       if str.IndexOf(UpperCase(TESTCRUD.IDField.TableName)) < 0 then
       begin
         sql := TSQLBuilder.GenerateCreateTableSQL(TESTCRUD.Data, True);
-        (connection as TBaseADOConnection).DirectExecute(sql);
+        (oconnection as TBaseADOConnection).DirectExecute(sql);
       end;
 
       FTablesChecked := True;
     finally
       str.free;
-      TDBConnectionPool.PutConnectionToPool(TESTCRUD.GetProvider.GetDBSettings, connection);
+      TDBConnectionPool.PutConnectionToPool(TESTCRUD.GetProvider.GetDBSettings, oconnection);
     end;
   end;
 end;
@@ -387,6 +391,40 @@ begin
   Check(TESTCRUD.Data.Datum.IsEmpty, 'field is not fetched');
 
   CheckFalse(TESTCRUD.Data.IsModified);
+end;
+
+procedure TCRUDTester.TestSmartPointer;
+var
+  t, t2: ITestCRUDSmart;
+  tc, tc2: TTestCRUD;
+begin
+  t := TTestCRUD.CreateSmartInstance();
+  t.NewQuery
+    .Select.AllFieldsOf(t.Data)
+    .Where.FieldValue(t.Data.ID).GreaterThan(0);
+  t.QuerySearchSingle;
+
+  //fetch object
+  tc := t();
+  //reset smart pointer, crud gets released to pool
+  t  := nil;
+  //get object again from pool
+  t   := TTestCRUD.CreateSmartInstance();
+  tc2 := t();
+  Assert(tc = tc2, 'Must be same object after put and fetched from pool');
+
+  //test query met 3 instanties
+  t2 := TTestCRUD.CreateSmartInstance();
+  TESTCRUD.NewQuery
+    .Select.Fields([TestCRUD.Data.ID, t.Data.ID, t2.Data.ID])
+    .InnerJoin.OnFields(t.Data.ID,  TestCRUD.Data.ID)
+    .InnerJoin.OnFields(t2.Data.ID, TestCRUD.Data.ID)
+    .Where.FieldValue(t.Data.ID).GreaterThan(0);
+  if TESTCRUD.QuerySearchSingle then
+  begin
+    CheckEquals(TestCRUD.Data.ID.TypedID.ID, t.Data.ID.TypedID.ID);
+    CheckEquals(TestCRUD.Data.ID.TypedID.ID, t2.Data.ID.TypedID.ID);
+  end;
 end;
 
 procedure TCRUDTester.TestSQLQueries;

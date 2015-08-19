@@ -60,7 +60,7 @@ type
     property Data: TDataRecord read FData;
   end;
 
-  TDataRecordList<T: TDataRecord> = class(TBaseDataRecordList)
+  TDataRecordList<T: TDataRecord, constructor> = class(TBaseDataRecordList)
   private
     function GetData: T;
   public
@@ -103,9 +103,9 @@ procedure TBaseDataRecordList.ClearAll;
 begin
   FSharedData := False;
   FDataLoaded := False;
+  FData.LoadRecordData(nil);
   FRows := nil;
   FRow := 0;
-  FData.LoadRecordData(nil);
 end;
 
 function TBaseDataRecordList.Count: Integer;

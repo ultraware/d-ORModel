@@ -21,6 +21,7 @@ uses
 begin
   Application.Initialize;
 
+  //example SQL server settings, see CustomCrudGenerator for specific implementation
   AddSQLDatabaseSettings('Server', 'Database', 'DatabaseUser', 'DatabasePasword');
 
   Application.MainFormOnTaskbar := True;

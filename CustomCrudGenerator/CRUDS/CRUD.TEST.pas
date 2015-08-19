@@ -12,7 +12,7 @@ uses
 
 type
   TTest = class(TDataRecord)
-  public
+  published
     [Test(ID)]                                 property  ID                         : TTypedTest_IDField         index   0 read GetTypedTest_IDField;
     [Test(Datum)]                              property  Datum                      : TTypedDateTimeField        index   1 read GetDateTimeField;
     [Test(Tekst)]                              property  Tekst                      : TTypedStringField          index   2 read GetStringField;

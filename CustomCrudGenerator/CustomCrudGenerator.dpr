@@ -41,7 +41,6 @@ uses
 begin
   Application.Initialize;
 
-//  TfrmMain.OutputCRUDPath := ExtractFilePath(Application.ExeName) + '..\CRUDs\';
   TGeneratorSettings.TemplatePath := ExtractFilePath(Application.ExeName) + '..\templates\';
 
   AddSQLDatabaseSettings('', 'TestDB.sdf',
@@ -55,6 +54,5 @@ begin
   Application.MainFormOnTaskbar := True;
   Application.CreateForm(TfrmMain, frmMain);
   Application.CreateForm(TDBSettingsFrm, DBSettingsFrm);
-  //  Application.CreateForm(TfrmModelGenerator, frmModelGenerator);
   Application.Run;
 end.

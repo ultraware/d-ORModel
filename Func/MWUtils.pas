@@ -2,16 +2,19 @@ unit MWUtils;
 
 interface
 
-uses
+uses // Delphi
+     // Shared
    Data.Base;
 
   function PreparedQueryToString(const aSQL: string;  aParams: TVariantArray): string;
 
 implementation
 
-uses
-  SysUtils, Variants, System.StrUtils,
-  UltraStringUtils;
+uses // Delphi
+     SysUtils, System.Variants
+     ,System.Classes
+     , DB.Connector
+     , UltraUtilsBasic;
 
 function PreparedQueryToString(const aSQL: string; aParams: TVariantArray): string;
 type TStringMode = (smDefault, smQuoted, smSquareBrackets);
